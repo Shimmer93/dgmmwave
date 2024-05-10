@@ -59,7 +59,7 @@ def preprocess_mmfi(root_dir, out_dir):
 
     dirs = sorted(glob(os.path.join(root_dir, 'all_data/E*/S*/A*')))
 
-    seq_idxs = np.arange(len(results['sequences']))
+    seq_idxs = np.arange(len(dirs))
     np.random.shuffle(seq_idxs)
     num_train = int(len(seq_idxs) * 0.8)
     num_val = int(len(seq_idxs) * 0.1)
@@ -77,7 +77,7 @@ def preprocess_mmfi(root_dir, out_dir):
                 raw_data = f.read()
                 data_tmp = np.frombuffer(raw_data, dtype=np.float64)
                 data_tmp = data_tmp.copy().reshape(-1, 5)
-                # data_tmp = data_tmp[:, :3]
+                data_tmp = data_tmp[:, :3]
             pcs.append(data_tmp)
         kps = np.load(os.path.join(d, 'ground_truth.npy'))
         results['sequences'].append({
@@ -143,6 +143,61 @@ def preprocess_mmfi(root_dir, out_dir):
     with open(os.path.join(out_dir, 'mmfi.pkl'), 'wb') as f:
         pickle.dump(results, f)
 
+def preprocess_mmbody(root_dir, out_dir):
+
+    results = {}
+    results['splits'] = {}
+    results['sequences'] = []
+
+    def filter_pcl(bounding_pcl: np.ndarray, target_pcl: np.ndarray, bound: float = 0.2, offset: float = 0):
+        """
+        Filter out the pcls of pcl_b that is not in the bounding_box of pcl_a
+        """
+        upper_bound = bounding_pcl[:, :3].max(axis=0) + bound
+        lower_bound = bounding_pcl[:, :3].min(axis=0) - bound
+        lower_bound[2] += offset
+
+        mask_x = (target_pcl[:, 0] >= lower_bound[0]) & (
+            target_pcl[:, 0] <= upper_bound[0])
+        mask_y = (target_pcl[:, 1] >= lower_bound[1]) & (
+            target_pcl[:, 1] <= upper_bound[1])
+        mask_z = (target_pcl[:, 2] >= lower_bound[2]) & (
+            target_pcl[:, 2] <= upper_bound[2])
+        index = mask_x & mask_y & mask_z
+        return target_pcl[index]
+    
+    train_val_dirs = glob(os.path.join(root_dir, 'train/sequence_*'))
+    test_dirs = glob(os.path.join(root_dir, 'test/*/sequence_*'))
+
+    train_val_seq_idxs = np.arange(len(train_val_dirs))
+    np.random.shuffle(train_val_seq_idxs)
+    num_train = int(len(train_val_seq_idxs) * 0.9)
+    results['splits']['train'] = train_val_seq_idxs[:num_train]
+    results['splits']['val'] = train_val_seq_idxs[num_train:]
+    results['splits']['test'] = np.arange(len(test_dirs)) + len(train_val_dirs)
+
+    for d in tqdm(train_val_dirs + test_dirs):
+        pcs = []
+        kps = []
+        pc_fns = glob(os.path.join(d, 'radar', '*.npy'))
+        bns = sorted([int(os.path.basename(fn).split('.')[0].split('_')[-1]) for fn in pc_fns])
+        for bn in bns:
+            pc = np.load(os.path.join(d, 'radar', f'frame_{bn}.npy'))
+            pc[:,3:] /= np.array([5e-38, 5., 150.])
+            kp = np.load(os.path.join(d, 'mesh', f'frame_{bn}.npz'))['joints'][:22]
+            pc = filter_pcl(kp, pc)
+            if len(pc) == 0:
+                continue
+            pcs.append(pc[:, :3])
+            kps.append(kp)
+        results['sequences'].append({
+            'point_clouds': pcs,
+            'keypoints': kps,
+            'action': -1
+        })
+
+    with open(os.path.join(out_dir, 'mmbody.pkl'), 'wb') as f:
+        pickle.dump(results, f)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Preprocess dataset')
@@ -160,5 +215,7 @@ if __name__ == '__main__':
         preprocess_milipoint(args.root_dir, args.out_dir)
     elif args.dataset == 'mmfi':
         preprocess_mmfi(args.root_dir, args.out_dir)
+    elif args.dataset == 'mmbody':
+        preprocess_mmbody(args.root_dir, args.out_dir)
     else:
         raise ValueError('Invalid dataset name')

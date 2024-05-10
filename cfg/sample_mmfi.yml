@@ -9,9 +9,9 @@ epochs: 100
 # Dataset parameters
 # --------------------------------------
 dataset_name: temporal
-train_split: train
-val_split: val
-test_split: test
+train_split: train_xsub_p3
+val_split: val_xsub_p3
+test_split: test_xsub_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -44,7 +44,7 @@ warmup_epochs: 20
 # output_dim: 18
 model_name: debug
 in_dim: 128
-out_dim: 18
+out_dim: 17
 # --------------------------------------
 # Loss parameters
 # --------------------------------------

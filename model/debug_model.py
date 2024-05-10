@@ -8,6 +8,7 @@ class DebugModel(nn.Module):
         self.fc = nn.Linear(in_dim, out_dim)
 
     def forward(self, x):
+        # batch size, sequence length, num points, features
         # x: B L N 3
         # out: B L J 3
         B, L, N, D = x.size()

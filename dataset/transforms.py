@@ -7,12 +7,28 @@ def log(x):
         f.write(str(x) + '\n')
 
 class Pad():
-    def __init__(self, max_size):
-        self.max_size = max_size
+    def __init__(self, max_len, pad_type='zero'):
+        self.max_len = max_len
+        self.pad_type = pad_type
+        if pad_type not in ['zero', 'repeat']:
+            raise ValueError('pad_type must be "zero" or "repeat"')
 
     def __call__(self, sample):
         for i in range(len(sample['point_clouds'])):
-            sample['point_clouds'][i] = np.pad(sample['point_clouds'][i], ((0, self.max_size - sample['point_clouds'][i].shape[0]), (0, 0)), mode='constant')
+            cur_len = sample['point_clouds'][i].shape[0]
+            if cur_len >= self.max_len:
+                indices = np.random.choice(cur_len, self.max_len, replace=False)
+                sample['point_clouds'][i] = sample['point_clouds'][i][indices]
+            else:
+                if self.pad_type == 'zero':
+                    sample['point_clouds'][i] = np.pad(sample['point_clouds'][i], ((0, self.max_len - sample['point_clouds'][i].shape[0]), (0, 0)), mode='constant')
+                elif self.pad_type == 'repeat':
+                    repeat = self.max_len // cur_len
+                    residue = self.max_len % cur_len
+                    indices = np.random.choice(cur_len, residue, replace=False)
+                    sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i] for _ in range(repeat)] + [sample['point_clouds'][i][indices]], axis=0)
+                else:
+                    raise ValueError('You should never reach here! pad_type must be "zero" or "repeat"')
         sample['point_clouds'] = np.stack(sample['point_clouds'])
         return sample
     
@@ -152,7 +168,7 @@ class TrainTransform():
         if hparams.random_rotate:
             tsfms.append(RandomApply([RandomRotate(hparams.angle_min, hparams.angle_max)], prob=hparams.rotate_prob))
         if hparams.pad:
-            tsfms.append(Pad(hparams.max_size))
+            tsfms.append(Pad(hparams.max_len))
         tsfms.append(ToTensor())
 
         self.transforms = tsfms
@@ -172,7 +188,7 @@ class ValTransform():
         if hparams.normalize:
             tsfms.append(Normalize())
         if hparams.pad:
-            tsfms.append(Pad(hparams.max_size))
+            tsfms.append(Pad(hparams.max_len))
         tsfms.append(ToTensor())
 
         self.transforms = tsfms
@@ -205,7 +221,7 @@ if __name__ == '__main__':
         angle_min = -0.5
         angle_max = 0.5
         rotate_prob = 1
-        max_size = 128
+        max_len = 128
 
     sample = {
         'point_clouds': [np.random.rand(32, 3), np.random.rand(30, 3), np.random.rand(60, 3), np.random.rand(32, 3), np.random.rand(32, 3)],

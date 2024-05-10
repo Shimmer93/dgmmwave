@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=4
-#SBATCH --partition=debug
+#SBATCH --partition=project
 ##SBATCH --nodelist=10-0-8-18
 
 export CUDA_VISIBLE_DEVICES=0
