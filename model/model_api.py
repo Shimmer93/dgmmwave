@@ -12,17 +12,17 @@ import os
 from collections import OrderedDict
 import wandb
 
-# from model.P4Transformer.model import P4Transformer
+from model.P4Transformer.model import P4Transformer
 from model.debug_model import DebugModel
 
 def create_model(hparams):
-    # if hparams.model_name.lower() == 'p4t':
-    #     model = P4Transformer(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-    #                           temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-    #                           emb_relu=hparams.emb_relu,
-    #                           dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-    #                           mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
-    if hparams.model_name.lower() == 'debug':
+    if hparams.model_name.lower() == 'p4t':
+        model = P4Transformer(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+                              emb_relu=hparams.emb_relu,
+                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
+    elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
     else:
         raise ValueError(f'Unknown model name: {hparams.model_name}')
