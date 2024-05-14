@@ -1,9 +1,15 @@
 import numpy as np
 import pickle
+import pandas as pd
 import os
 from glob import glob
 from tqdm import tqdm
 import argparse
+
+def add_to_split(results, split_name, idx):
+    if split_name not in results['splits']:
+        results['splits'][split_name] = []
+    results['splits'][split_name].append(idx)
 
 def preprocess_milipoint(root_dir, out_dir):
     results = {}
@@ -52,11 +58,6 @@ def preprocess_mmfi(root_dir, out_dir):
 
     action_p1 = ['2', '3', '4', '5', '13', '14', '17', '18', '19', '20', '21', '22', '23', '27']
 
-    def add_to_split(results, split_name, idx):
-        if split_name not in results['splits']:
-            results['splits'][split_name] = []
-        results['splits'][split_name].append(idx)
-
     dirs = sorted(glob(os.path.join(root_dir, 'all_data/E*/S*/A*')))
 
     seq_idxs = np.arange(len(dirs))
@@ -77,7 +78,8 @@ def preprocess_mmfi(root_dir, out_dir):
                 raw_data = f.read()
                 data_tmp = np.frombuffer(raw_data, dtype=np.float64)
                 data_tmp = data_tmp.copy().reshape(-1, 5)
-                data_tmp = data_tmp[:, :3]
+                data_tmp[:, [3, 4]] = data_tmp[:, [4, 3]]
+                # data_tmp = data_tmp[:, :3]
             pcs.append(data_tmp)
         kps = np.load(os.path.join(d, 'ground_truth.npy'))
         results['sequences'].append({
@@ -183,12 +185,12 @@ def preprocess_mmbody(root_dir, out_dir):
         bns = sorted([int(os.path.basename(fn).split('.')[0].split('_')[-1]) for fn in pc_fns])
         for bn in bns:
             pc = np.load(os.path.join(d, 'radar', f'frame_{bn}.npy'))
-            pc[:,3:] /= np.array([5e-38, 5., 150.])
+            # pc[:,3:] /= np.array([5e-38, 5., 150.])
             kp = np.load(os.path.join(d, 'mesh', f'frame_{bn}.npz'))['joints'][:22]
             pc = filter_pcl(kp, pc)
             if len(pc) == 0:
                 continue
-            pcs.append(pc[:, :3])
+            pcs.append(pc[:, [0, 1, 2, 4, 5]])
             kps.append(kp)
         results['sequences'].append({
             'point_clouds': pcs,
@@ -197,6 +199,71 @@ def preprocess_mmbody(root_dir, out_dir):
         })
 
     with open(os.path.join(out_dir, 'mmbody.pkl'), 'wb') as f:
+        pickle.dump(results, f)
+
+def preprocess_mri(root_dir, out_dir):
+
+    results = {}
+    results['splits'] = {}
+    results['sequences'] = []
+
+    sub_idxs = np.arange(1, 21)
+    shuffled_sub_idxs = sub_idxs.copy()
+    np.random.shuffle(shuffled_sub_idxs)
+    train_sub_idxs = shuffled_sub_idxs[:14]
+    val_sub_idxs = shuffled_sub_idxs[14:16]
+
+    count = 0
+    for idx in tqdm(sub_idxs):
+        pc_fn = os.path.join(root_dir, f'dataset_release/aligned_data/radar/singleframe/subject{idx}.csv')
+        label_fn = os.path.join(root_dir, f'dataset_release/aligned_data/pose_labels/subject{idx}_all_labels.cpl')
+        pc_df = pd.read_csv(pc_fn)
+        with open(label_fn, 'rb') as f:
+            labels = pickle.load(f)
+        splits = list(labels['video_label'].values())[1:13]
+        for i, split in enumerate(splits):
+            pcs = []
+            for j in range(split[0], split[1]):
+                pc = pc_df[pc_df['Camera Frame'] == j][['X', 'Y', 'Z', 'Doppler', 'Intensity']].values
+                pcs.append(pc)
+            kps = labels['refined_gt_kps'][split[0]:split[1]].transpose(0, 2, 1)
+            results['sequences'].append({
+                'point_clouds': pcs,
+                'keypoints': kps,
+                'action': i
+            })
+            if idx in train_sub_idxs:
+                add_to_split(results, 'train_s2_p1', count)
+            elif idx in val_sub_idxs:
+                add_to_split(results, 'val_s2_p1', count)
+            else:
+                add_to_split(results, 'test_s2_p1', count)
+            count += 1
+
+    seq_idxs = np.arange(len(results['sequences']))
+    np.random.shuffle(seq_idxs)
+    num_train = int(len(seq_idxs) * 0.7)
+    num_val = int(len(seq_idxs) * 0.1)
+    results['splits']['train_s1_p1'] = sorted(seq_idxs[:num_train])
+    results['splits']['val_s1_p1'] = sorted(seq_idxs[num_train:num_train+num_val])
+    results['splits']['test_s1_p1'] = sorted(seq_idxs[num_train+num_val:])
+
+    for i in tqdm(seq_idxs):
+        if i in results['splits']['train_s1_p1'] and results['sequences'][i]['action'] < 10:
+            add_to_split(results, 'train_s1_p2', i)
+        elif i in results['splits']['val_s1_p1'] and results['sequences'][i]['action'] < 10:
+            add_to_split(results, 'val_s1_p2', i)
+        elif i in results['splits']['test_s1_p1'] and results['sequences'][i]['action'] < 10:
+            add_to_split(results, 'test_s1_p2', i)
+
+        if i in results['splits']['train_s2_p1'] and results['sequences'][i]['action'] < 10:
+            add_to_split(results, 'train_s2_p2', i)
+        elif i in results['splits']['val_s2_p1'] and results['sequences'][i]['action'] < 10:
+            add_to_split(results, 'val_s2_p2', i)
+        elif i in results['splits']['test_s2_p1'] and results['sequences'][i]['action'] < 10:
+            add_to_split(results, 'test_s2_p2', i)
+            
+    with open(os.path.join(out_dir, 'mri.pkl'), 'wb') as f:
         pickle.dump(results, f)
 
 if __name__ == '__main__':
@@ -210,12 +277,20 @@ if __name__ == '__main__':
     if not os.path.exists(args.out_dir):
         os.makedirs(args.out_dir)
     np.random.seed(args.seed)
+    # Seeds used in original repos:
+    # milipoint: 42
+    # mmfi: 0
+    # mmbody: 35
+    # mri: 1234567891
 
-    if args.dataset == 'milipoint':
+    dataset = args.dataset.lower()
+    if dataset == 'milipoint':
         preprocess_milipoint(args.root_dir, args.out_dir)
-    elif args.dataset == 'mmfi':
+    elif dataset == 'mmfi':
         preprocess_mmfi(args.root_dir, args.out_dir)
-    elif args.dataset == 'mmbody':
+    elif dataset == 'mmbody':
         preprocess_mmbody(args.root_dir, args.out_dir)
+    elif dataset == 'mri':
+        preprocess_mri(args.root_dir, args.out_dir)
     else:
         raise ValueError('Invalid dataset name')
