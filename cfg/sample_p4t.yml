@@ -9,9 +9,9 @@ epochs: 100
 # Dataset parameters
 # --------------------------------------
 dataset_name: temporal
-train_split: train
-val_split: val
-test_split: test
+train_split: train_xsub_p3
+val_split: val_xsub_p3
+test_split: test_xsub_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -32,7 +32,7 @@ warmup_epochs: 20
 model_name: p4t
 radius: 0.7
 nsamples: 32
-spatial_stride: 32
+spatial_stride: 8
 temporal_kernel_size: 3
 temporal_stride: 1
 emb_relu: false
@@ -41,7 +41,8 @@ depth: 5
 heads: 8
 dim_head: 128
 mlp_dim: 2048
-output_dim: 18
+output_dim: 51
+features: 2
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -53,13 +54,14 @@ gamma: 0.8
 # pipeline
 multi_frame: true
 random_jitter: true
-flip: true
+flip: false
 normalize: true
 random_scale: true
 random_rotate: true
+reduce_keypoint_len: true
 pad: true
 # parameters
-clip_len: 32
+clip_len: 5
 num_frames: 3
 jitter_std: 0.01
 jitter_prob: 0.5
@@ -72,4 +74,7 @@ scale_prob: 0.5
 angle_min: -0.5
 angle_max: 0.5
 rotate_prob: 0.5
+only_one: true
+keep_type: 'middle'
+frame_to_reduce: 0
 max_len: 128

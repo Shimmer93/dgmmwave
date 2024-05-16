@@ -35,12 +35,20 @@ class Pad():
 class UniformSample():
     def __init__(self, clip_len):
         self.clip_len = clip_len
+        assert clip_len % 2 == 1, 'num_frames must be odd'
+        self.offset = (clip_len - 1) // 2
 
     def __call__(self, sample):
-        while len(sample['point_clouds']) < self.clip_len:
+        # while len(sample['point_clouds']) < self.clip_len:
+        #     sample['point_clouds'].append(sample['point_clouds'][-1])
+        #     sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
+        for i in range(self.offset):
+            sample['point_clouds'].insert(0, sample['point_clouds'][0])
+            sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
             sample['point_clouds'].append(sample['point_clouds'][-1])
             sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
-        start_idx = np.random.randint(0, len(sample['point_clouds']) - self.clip_len + 1)
+        # start_idx = np.random.randint(0, len(sample['point_clouds']) - self.clip_len + 1)
+        start_idx = sample['index']
         sample['point_clouds'] = sample['point_clouds'][start_idx:start_idx+self.clip_len]
         sample['keypoints'] = sample['keypoints'][start_idx:start_idx+self.clip_len]
         # print('uniform sample', len(sample['point_clouds']), len(sample['keypoints']))
@@ -49,13 +57,14 @@ class UniformSample():
 class MultiFrameAggregate():
     def __init__(self, num_frames):
         self.num_frames = num_frames
-        self.offset = (num_frames - 1) // 2
         assert num_frames % 2 == 1, 'num_frames must be odd'
+        self.offset = (num_frames - 1) // 2
 
     def __call__(self, sample):
-        if self.num_frames <= len(sample['point_clouds']):
-            sample['point_clouds'] = [np.concatenate(sample['point_clouds'][i:i+self.num_frames]) for i in range(len(sample['point_clouds']) - self.num_frames + 1)]
-            sample['keypoints'] = sample['keypoints'][self.offset:-self.offset]
+        total_frames = len(sample['point_clouds'])
+        if self.num_frames <= total_frames:
+            sample['point_clouds'] = [np.concatenate(sample['point_clouds'][np.maximum(0, i-self.offset):np.minimum(i+self.offset+1, total_frames-1)]) for i in range(total_frames)]
+            # sample['keypoints'] = sample['keypoints'][self.offset:-self.offset]
         # print('multi frame aggregate', len(sample['point_clouds']), len(sample['keypoints']))
         return sample
 
@@ -67,7 +76,7 @@ class RandomScale():
     def __call__(self, sample):
         scale = np.random.uniform(self.scale_min, self.scale_max)
         for i in range(len(sample['point_clouds'])):
-            sample['point_clouds'][i] *= scale
+            sample['point_clouds'][i][...,:3] *= scale
         sample['keypoints'] *= scale
         sample['scale'] = scale
         return sample
@@ -81,7 +90,7 @@ class RandomRotate():
         angle = np.random.uniform(self.angle_min, self.angle_max)
         rot_matrix = np.array([[np.cos(angle), 0, np.sin(angle)], [0, 1, 0], [-np.sin(angle), 0, np.cos(angle)]])
         for i in range(len(sample['point_clouds'])):
-            sample['point_clouds'][i] = sample['point_clouds'][i] @ rot_matrix
+            sample['point_clouds'][i][...,:3] = sample['point_clouds'][i][...,:3] @ rot_matrix
         sample['keypoints'] = sample['keypoints'] @ rot_matrix
         sample['angle'] = angle
         return sample
@@ -92,23 +101,27 @@ class RandomJitter():
 
     def __call__(self, sample):
         for i in range(len(sample['point_clouds'])):
-            sample['point_clouds'][i] += np.random.normal(0, self.jitter_std, sample['point_clouds'][i].shape)
+            sample['point_clouds'][i][...,:3] += np.random.normal(0, self.jitter_std, sample['point_clouds'][i][...,:3].shape)
         return sample
 
 class GetCentroidRadius():
     def __call__(self, sample):
         pc_cat = np.concatenate(sample['point_clouds'], axis=0)
-        centroid = np.mean(pc_cat, axis=0)
-        radius = np.max(np.linalg.norm(pc_cat - centroid, axis=1))
+        centroid = np.mean(pc_cat[...,:3], axis=0)
+        radius = np.max(np.linalg.norm(pc_cat[...,:3] - centroid, axis=1))
         sample['centroid'] = centroid
         sample['radius'] = radius
         return sample
 
 class Normalize():
+    def __init__(self, feat_scale=None):
+        self.feat_scale = feat_scale
     def __call__(self, sample):
         for i in range(len(sample['point_clouds'])):
-            sample['point_clouds'][i] -= sample['centroid'][np.newaxis]
-            sample['point_clouds'][i] /= sample['radius']
+            sample['point_clouds'][i][...,:3] -= sample['centroid'][np.newaxis]
+            sample['point_clouds'][i][...,:3] /= sample['radius']
+            if self.feat_scale:
+                sample['point_clouds'][i][...,3:] /= np.array(self.feat_scale)[np.newaxis][np.newaxis]
         # print('normalize', len(sample['point_clouds']), len(sample['keypoints']), sample['centroid'], sample['radius'])
         sample['keypoints'] -= sample['centroid'][np.newaxis][np.newaxis]
         sample['keypoints'] /= sample['radius']
@@ -120,12 +133,15 @@ class Flip():
         self.right_idxs = right_idxs
 
     def __call__(self, sample):
+        for i in range(len(sample['point_clouds'])):
+            sample['point_clouds'][i][..., 0] *= -1 
         indices = np.arange(sample['keypoints'].shape[1], dtype=np.int64)
         left, right = (self.left_idxs, self.right_idxs)
         for l, r in zip(left, right):
             indices[l] = r
             indices[r] = l
         sample['keypoints'] = sample['keypoints'][:, indices]
+        sample['keypoints'][..., 0] *= -1
         return sample
 
 class ToTensor():
@@ -137,6 +153,28 @@ class ToTensor():
         sample['keypoints'] = torch.from_numpy(sample['keypoints']).float()
         # sample['action'] = torch.tensor(sample['action'])
         return sample
+
+class ReduceKeypointLen():
+    def __init__(self, only_one=False, keep_type='middle', frame_to_reduce=1):
+        self.only_one = only_one
+        assert keep_type in ['middle', 'start', 'end'], 'keep_type must be "middle", "start" or "end"'
+        self.keep_type = keep_type
+        self.frame_to_reduce = frame_to_reduce
+
+    def __call__(self, sample):
+        if self.only_one:
+            num_frames = len(sample['point_clouds'])
+            if self.keep_type == 'middle':
+                keep_idx = (num_frames - 1) // 2
+            elif self.keep_type == 'start':
+                keep_idx = 0
+            else:
+                keep_idx = num_frames - 1
+            sample['keypoints'] = sample['keypoints'][keep_idx:keep_idx+1]
+        else:
+            sample['keypoints'] = sample['keypoints'][self.frame_to_reduce:-self.frame_to_reduce]
+        return sample
+
 
 class RandomApply():
     def __init__(self, transforms, prob):
@@ -167,6 +205,8 @@ class TrainTransform():
             tsfms.append(RandomApply([RandomScale(hparams.scale_min, hparams.scale_max)], prob=hparams.scale_prob))
         if hparams.random_rotate:
             tsfms.append(RandomApply([RandomRotate(hparams.angle_min, hparams.angle_max)], prob=hparams.rotate_prob))
+        if hparams.reduce_keypoint_len:
+            tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
         if hparams.pad:
             tsfms.append(Pad(hparams.max_len))
         tsfms.append(ToTensor())
@@ -182,11 +222,14 @@ class ValTransform():
     def __init__(self, hparams):
         self.hparams = hparams
         tsfms = []
+        tsfms.append(UniformSample(hparams.clip_len))
         if hparams.multi_frame:
             tsfms.append(MultiFrameAggregate(hparams.num_frames))
         tsfms.append(GetCentroidRadius())
         if hparams.normalize:
             tsfms.append(Normalize())
+        if hparams.reduce_keypoint_len:
+            tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
         if hparams.pad:
             tsfms.append(Pad(hparams.max_len))
         tsfms.append(ToTensor())
@@ -206,6 +249,7 @@ if __name__ == '__main__':
         normalize = True
         random_scale = True
         random_rotate = True
+        reduce_keypoint_len = True
         pad = True
         # parameters
         clip_len = 5
@@ -221,6 +265,9 @@ if __name__ == '__main__':
         angle_min = -0.5
         angle_max = 0.5
         rotate_prob = 1
+        only_one = True
+        keep_type = 'middle'
+        frame_to_reduce = 0
         max_len = 128
 
     sample = {
@@ -233,6 +280,6 @@ if __name__ == '__main__':
     train_transform = TrainTransform(hparams)
     val_transform = ValTransform(hparams)
 
-    sample = val_transform(sample)
+    sample = train_transform(sample)
     print(sample.keys())
     print(sample['point_clouds'].shape, sample['keypoints'].shape)

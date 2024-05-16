@@ -63,4 +63,5 @@ class P4Transformer(nn.Module):
         output = self.transformer(embedding)
         output = torch.max(input=output, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
+        output = output.reshape(output.shape[0], 1, output.shape[-1]//3, 3)
         return output

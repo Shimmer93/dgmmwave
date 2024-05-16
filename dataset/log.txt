@@ -1,8 +1,0 @@
-uniform sample
-5
-multi frame aggregate
-2
-normalize
-2
-(3,)
-()

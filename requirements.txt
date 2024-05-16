@@ -5,3 +5,4 @@ lightning-bolts
 wandb
 matplotlib
 pandas
+einops
