@@ -26,6 +26,11 @@ class Preprocessor():
             self.results['splits'][split_name] = []
         self.results['splits'][split_name].append(idx)
 
+    def _normalize_intensity(self, feat, max_value):
+        feat = np.clip(feat, 0, max_value)
+        feat /= max_value
+        return feat
+
 class MiliPointPreprocessor(Preprocessor):
     def __init__(self, root_dir, out_dir):
         super().__init__(root_dir, out_dir)
@@ -91,6 +96,7 @@ class MMFiPreprocessor(Preprocessor):
             keep_idxs = []
             for bin_fn in sorted(glob(os.path.join(d.replace('all_data', 'filtered_mmwave'), "frame*.bin"))):
                 data_tmp = self._read_bin(bin_fn)
+                data_tmp[:, -1] = self._normalize_intensity(data_tmp[:, -1], 40.0)
                 pcs.append(data_tmp)
                 keep_idx = int(os.path.basename(bin_fn).split('.')[0][5:]) - 1
                 keep_idxs.append(keep_idx)
@@ -188,7 +194,8 @@ class MMBodyPreprocessor(Preprocessor):
             bns = sorted([int(os.path.basename(fn).split('.')[0].split('_')[-1]) for fn in pc_fns])
             for bn in bns:
                 pc = np.load(os.path.join(d, 'radar', f'frame_{bn}.npy'))
-                # pc[:,3:] /= np.array([5e-38, 5., 150.])
+                pc[:,3:] /= np.array([5e-38, 5., 1.])
+                pc[:, -1] = self._normalize_intensity(pc[:, -1], 150.0)
                 kp = np.load(os.path.join(d, 'mesh', f'frame_{bn}.npz'))['joints'][:22]
                 pc = self._filter_pcl(kp, pc)
                 if len(pc) == 0:
@@ -244,6 +251,7 @@ class MRIPreprocessor(Preprocessor):
                 pcs = []
                 for j in range(split[0], split[1]):
                     pc = pc_df[pc_df['Camera Frame'] == j][['X', 'Y', 'Z', 'Doppler', 'Intensity']].values
+                    pc[:, -1] = self._normalize_intensity(pc[:, -1], 200.0)
                     pcs.append(pc)
                 kps = labels['refined_gt_kps'][split[0]:split[1]].transpose(0, 2, 1)
                 self.results['sequences'].append({

@@ -17,7 +17,7 @@ def main(args):
 
     callbacks = [
         ModelCheckpoint(
-            monitor='val_loss',
+            monitor='val_mpjpe',
             dirpath=args.model_ckpt_dir,
             filename=args.model_name+'-{epoch}-{val_loss:.4f}',
             save_top_k=1,
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     cfg = load_cfg(args.cfg)
     args = merge_args_cfg(args, cfg)
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
     # please change {WANDB_API_KEY} to your personal api_key before using wandb
     os.environ["WANDB_API_KEY"] = "60b29f8aae47df8755cbd430f0179c0cd8797bf6"

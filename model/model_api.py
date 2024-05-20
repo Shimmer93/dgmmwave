@@ -1,4 +1,5 @@
 from typing import Any
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,6 +15,8 @@ import wandb
 
 from model.P4Transformer.model import P4Transformer
 from model.debug_model import DebugModel
+from model.metrics import calulate_error
+from loss.pose import GeodesicLoss
 
 def create_model(hparams):
     if hparams.model_name.lower() == 'p4t':
@@ -32,6 +35,8 @@ def create_model(hparams):
 def create_loss(hparams):
     if hparams.loss_name == 'mse':
         return nn.MSELoss()
+    elif hparams.loss_name == 'geodesic':
+        return GeodesicLoss()
     else:
         raise NotImplementedError
 
@@ -65,12 +70,23 @@ class LitModel(pl.LightningModule):
         self.model = create_model(hparams)
         self.loss = create_loss(hparams)
 
-    def _vis_pred_gt_keypoints(self, y, y_hat):
-        fig, ax = plt.subplots(1, 2)
-        ax[0].plot(y[0, 0, :, 0].detach().cpu().numpy(), y[0, 0, :, 1].detach().cpu().numpy(), 'ro')
-        ax[0].set_title('Predicted')
-        ax[1].plot(y_hat[0, 0, :, 0].detach().cpu().numpy(), y_hat[0, 0, :, 1].detach().cpu().numpy(), 'bo')
-        ax[1].set_title('Ground Truth')
+    def _vis_pred_gt_keypoints(self, y_hat, y):
+        fig, ax = plt.subplots(2, 2)
+        for p_hat, p in zip(y_hat[0, 0], y[0, 0]):
+            random_color = np.random.rand(3).tolist()
+            ax[0, 0].plot(p_hat[0], p_hat[1], color=random_color, marker='o')
+            ax[0, 1].plot(p[0], p[1], color=random_color, marker='o')
+        ax[1, 0].plot(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], 'bo')
+        ax[1, 0].plot(y[0, 0, :, 0], y[0, 0, :, 1], 'ro')
+        ax[1, 0].set_title('2D')
+        ax[1, 1].plot3D(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], y_hat[0, 0, :, 2], 'bo')
+        ax[1, 1].plot3D(y[0, 0, :, 0], y[0, 0, :, 1], y[0, 0, :, 2], 'ro')
+        ax[1, 1].set_title('3D')
+        # fig, ax = plt.subplots(1, 2)
+        # ax[0].plot(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], 'bo')
+        # ax[0].set_title('Predicted')
+        # ax[1].plot(y[0, 0, :, 0], y[0, 0, :, 1], 'ro')
+        # ax[1].set_title('Ground Truth')
         wandb.log({'keypoints': wandb.Image(fig)})
         plt.close(fig)
 
@@ -79,7 +95,10 @@ class LitModel(pl.LightningModule):
         y = batch['keypoints']
         y_hat = self.model(x)
         loss = self.loss(y_hat, y)
-        self.log('train_loss', loss)
+        y_hat = y_hat.detach().cpu().numpy()
+        y = y.detach().cpu().numpy()
+        mpjpe, pampjpe = calulate_error(y_hat, y)
+        self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe})
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -87,8 +106,11 @@ class LitModel(pl.LightningModule):
         y = batch['keypoints']
         y_hat = self.model(x)
         loss = self.loss(y_hat, y)
-        self.log('val_loss', loss)
-        self._vis_pred_gt_keypoints(y, y_hat)
+        y_hat = y_hat.detach().cpu().numpy()
+        y = y.detach().cpu().numpy()
+        mpjpe, pampjpe = calulate_error(y_hat, y)
+        self.log_dict({'val_loss': loss, 'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe})
+        self._vis_pred_gt_keypoints(y_hat, y)
         return loss
     
     def test_step(self, batch, batch_idx):
@@ -96,8 +118,11 @@ class LitModel(pl.LightningModule):
         y = batch['keypoints']
         y_hat = self.model(x)
         loss = self.loss(y_hat, y)
-        self.log('test_loss', loss)
-        self._vis_pred_gt_keypoints(y, y_hat)
+        y_hat = y_hat.detach().cpu().numpy()
+        y = y.detach().cpu().numpy()
+        mpjpe, pampjpe = calulate_error(y_hat, y)
+        self.log_dict({'test_loss': loss, 'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe})
+        self._vis_pred_gt_keypoints(y_hat, y)
         return loss
 
     def configure_optimizers(self):

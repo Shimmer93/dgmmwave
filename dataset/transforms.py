@@ -200,7 +200,7 @@ class TrainTransform():
             tsfms.append(RandomApply([Flip(hparams.left_idxs, hparams.right_idxs)], prob=hparams.flip_prob))
         tsfms.append(GetCentroidRadius())
         if hparams.normalize:
-            tsfms.append(Normalize())
+            tsfms.append(Normalize(hparams.feat_scale))
         if hparams.random_scale:
             tsfms.append(RandomApply([RandomScale(hparams.scale_min, hparams.scale_max)], prob=hparams.scale_prob))
         if hparams.random_rotate:
