@@ -41,7 +41,7 @@ depth: 5
 heads: 8
 dim_head: 128
 mlp_dim: 2048
-output_dim: 51
+output_dim: 66
 features: 2
 # --------------------------------------
 # Loss parameters
@@ -53,6 +53,7 @@ gamma: 0.8
 # --------------------------------------
 # pipeline
 multi_frame: true
+remove_outliers: true
 random_jitter: true
 flip: false
 normalize: true
@@ -62,6 +63,8 @@ reduce_keypoint_len: true
 pad: true
 # parameters
 clip_len: 5
+outlier_type: 'zscore'
+threshold: 2.0
 num_frames: 3
 jitter_std: 0.01
 jitter_prob: 0.5
@@ -78,4 +81,4 @@ rotate_prob: 0.5
 only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
-max_len: 128
+max_len: 1024

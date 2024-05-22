@@ -29,22 +29,20 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-# model_name: p4t
-# radius: 0.7
-# nsamples: 32
-# spatial_stride: 32
-# temporal_kernel_size: 3
-# temporal_stride: 1
-# emb_relu: false
-# dim: 1024
-# depth: 5
-# heads: 8
-# dim_head: 128
-# mlp_dim: 2048
-# output_dim: 18
-model_name: debug
-in_dim: 128
-out_dim: 17
+model_name: p4t
+radius: 0.7
+nsamples: 32
+spatial_stride: 8
+temporal_kernel_size: 3
+temporal_stride: 1
+emb_relu: false
+dim: 1024
+depth: 5
+heads: 8
+dim_head: 128
+mlp_dim: 2048
+output_dim: 51
+features: 2
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -55,24 +53,36 @@ gamma: 0.8
 # --------------------------------------
 # pipeline
 multi_frame: true
+remove_outliers: true
 random_jitter: true
-flip: true
+flip: false
 normalize: true
 random_scale: true
 random_rotate: true
+reduce_keypoint_len: true
 pad: true
 # parameters
-clip_len: 32
+clip_len: 5
+outlier_type: 'radius'
+num_neighbors: 3
+std_multiplier: 1.0
+radius: 0.2
+min_neighbors: 2
+centroid_type: 'minball'
 num_frames: 3
 jitter_std: 0.01
 jitter_prob: 0.5
 left_idxs: [5,6,7,11,12,13,15,17]
 right_idxs: [2,3,4,8,9,10,14,16]
 flip_prob: 0.5
+feat_scale: null
 scale_min: 0.8
 scale_max: 1.2
 scale_prob: 0.5
-angle_min: -0.5
-angle_max: 0.5
+angle_min: -3.141592653589793
+angle_max: 3.141592653589793
 rotate_prob: 0.5
+only_one: true
+keep_type: 'middle'
+frame_to_reduce: 0
 max_len: 128

@@ -6,3 +6,5 @@ wandb
 matplotlib
 pandas
 einops
+scipy
+miniball

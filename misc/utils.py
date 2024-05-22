@@ -15,3 +15,6 @@ def merge_args_cfg(args, cfg):
     dict = {**dict0, **dict1}
 
     return Namespace(**dict)
+
+def torch2numpy(tensor):
+    return tensor.detach().cpu().numpy()

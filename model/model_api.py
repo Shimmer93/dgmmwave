@@ -17,6 +17,7 @@ from model.P4Transformer.model import P4Transformer
 from model.debug_model import DebugModel
 from model.metrics import calulate_error
 from loss.pose import GeodesicLoss
+from misc.utils import torch2numpy
 
 def create_model(hparams):
     if hparams.model_name.lower() == 'p4t':
@@ -70,23 +71,32 @@ class LitModel(pl.LightningModule):
         self.model = create_model(hparams)
         self.loss = create_loss(hparams)
 
-    def _vis_pred_gt_keypoints(self, y_hat, y):
-        fig, ax = plt.subplots(2, 2)
+    def _vis_pred_gt_keypoints(self, y_hat, y, x):
+        fig = plt.figure()
+        ax_pred = fig.add_subplot(231)
+        ax_gt = fig.add_subplot(232)
+        ax_2d = fig.add_subplot(233)
+        ax_3d = fig.add_subplot(234, projection='3d')
+        ax_pc = fig.add_subplot(235)
+        ax_pred.set_aspect('equal')
+        ax_gt.set_aspect('equal')
+        ax_2d.set_aspect('equal')
+        ax_3d.set_aspect('equal')
+        ax_pc.set_aspect('equal')
+        ax_pred.set_title('Predicted')
+        ax_gt.set_title('Ground Truth')
+        ax_2d.set_title('2D')
+        ax_3d.set_title('3D')
+        ax_pc.set_title('Point Cloud')
         for p_hat, p in zip(y_hat[0, 0], y[0, 0]):
             random_color = np.random.rand(3).tolist()
-            ax[0, 0].plot(p_hat[0], p_hat[1], color=random_color, marker='o')
-            ax[0, 1].plot(p[0], p[1], color=random_color, marker='o')
-        ax[1, 0].plot(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], 'bo')
-        ax[1, 0].plot(y[0, 0, :, 0], y[0, 0, :, 1], 'ro')
-        ax[1, 0].set_title('2D')
-        ax[1, 1].plot3D(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], y_hat[0, 0, :, 2], 'bo')
-        ax[1, 1].plot3D(y[0, 0, :, 0], y[0, 0, :, 1], y[0, 0, :, 2], 'ro')
-        ax[1, 1].set_title('3D')
-        # fig, ax = plt.subplots(1, 2)
-        # ax[0].plot(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], 'bo')
-        # ax[0].set_title('Predicted')
-        # ax[1].plot(y[0, 0, :, 0], y[0, 0, :, 1], 'ro')
-        # ax[1].set_title('Ground Truth')
+            ax_pred.plot(p_hat[0], p_hat[1], color=random_color, marker='o')
+            ax_gt.plot(p[0], p[1], color=random_color, marker='o')
+        ax_2d.plot(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], 'bo')
+        ax_2d.plot(y[0, 0, :, 0], y[0, 0, :, 1], 'ro')
+        ax_3d.scatter(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], y_hat[0, 0, :, 2], 'b')
+        ax_3d.scatter(y[0, 0, :, 0], y[0, 0, :, 1], y[0, 0, :, 2], 'r')
+        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 1], x[0, 0, :, 2], 'g')
         wandb.log({'keypoints': wandb.Image(fig)})
         plt.close(fig)
 
@@ -95,8 +105,8 @@ class LitModel(pl.LightningModule):
         y = batch['keypoints']
         y_hat = self.model(x)
         loss = self.loss(y_hat, y)
-        y_hat = y_hat.detach().cpu().numpy()
-        y = y.detach().cpu().numpy()
+        y_hat = torch2numpy(y_hat)
+        y = torch2numpy(y)
         mpjpe, pampjpe = calulate_error(y_hat, y)
         self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe})
         return loss
@@ -106,11 +116,11 @@ class LitModel(pl.LightningModule):
         y = batch['keypoints']
         y_hat = self.model(x)
         loss = self.loss(y_hat, y)
-        y_hat = y_hat.detach().cpu().numpy()
-        y = y.detach().cpu().numpy()
+        y_hat = torch2numpy(y_hat)
+        y = torch2numpy(y)
         mpjpe, pampjpe = calulate_error(y_hat, y)
         self.log_dict({'val_loss': loss, 'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe})
-        self._vis_pred_gt_keypoints(y_hat, y)
+        self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
         return loss
     
     def test_step(self, batch, batch_idx):
@@ -118,11 +128,11 @@ class LitModel(pl.LightningModule):
         y = batch['keypoints']
         y_hat = self.model(x)
         loss = self.loss(y_hat, y)
-        y_hat = y_hat.detach().cpu().numpy()
-        y = y.detach().cpu().numpy()
+        y_hat = torch2numpy(y_hat)
+        y = torch2numpy(y)
         mpjpe, pampjpe = calulate_error(y_hat, y)
         self.log_dict({'test_loss': loss, 'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe})
-        self._vis_pred_gt_keypoints(y_hat, y)
+        self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
         return loss
 
     def configure_optimizers(self):

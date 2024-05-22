@@ -3,6 +3,7 @@ slurm-*
 wandb/
 model_ckpt/
 *.sh
+*.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

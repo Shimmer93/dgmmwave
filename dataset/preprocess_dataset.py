@@ -97,6 +97,7 @@ class MMFiPreprocessor(Preprocessor):
             for bin_fn in sorted(glob(os.path.join(d.replace('all_data', 'filtered_mmwave'), "frame*.bin"))):
                 data_tmp = self._read_bin(bin_fn)
                 data_tmp[:, -1] = self._normalize_intensity(data_tmp[:, -1], 40.0)
+                data_tmp = data_tmp[:, [1, 2, 0, 3, 4]]
                 pcs.append(data_tmp)
                 keep_idx = int(os.path.basename(bin_fn).split('.')[0][5:]) - 1
                 keep_idxs.append(keep_idx)
@@ -252,6 +253,7 @@ class MRIPreprocessor(Preprocessor):
                 for j in range(split[0], split[1]):
                     pc = pc_df[pc_df['Camera Frame'] == j][['X', 'Y', 'Z', 'Doppler', 'Intensity']].values
                     pc[:, -1] = self._normalize_intensity(pc[:, -1], 200.0)
+                    pc = pc[:, [2, 0, 1, 3, 4]]
                     pcs.append(pc)
                 kps = labels['refined_gt_kps'][split[0]:split[1]].transpose(0, 2, 1)
                 self.results['sequences'].append({

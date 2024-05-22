@@ -1,13 +1,49 @@
 import numpy as np
 import torch
+from scipy import stats
+from sklearn.neighbors import NearestNeighbors
+from miniball import get_bounding_ball
 
 def log(x):
     print(x)
     with open('log.txt', 'a') as f:
         f.write(str(x) + '\n')
 
+class RemoveOutliers():
+    def __init__(self, outlier_type='statistical', num_neighbors=3, std_multiplier=1.0, radius=1.0, min_neighbors=2):
+        self.outlier_type = outlier_type
+        self.num_neighbors = num_neighbors
+        self.std_multiplier = std_multiplier
+        self.radius = radius
+        self.min_neighbors = min_neighbors
+        if outlier_type not in ['statistical', 'radius']:
+            raise ValueError('outlier_type must be "statistical" or "radius"')
+
+    def __call__(self, sample):
+        for i in range(len(sample['point_clouds'])):
+            if self.outlier_type == 'statistical':
+                neighbors = NearestNeighbors(n_neighbors=self.num_neighbors+1).fit(sample['point_clouds'][i][...,:3])
+                distances, _ = neighbors.kneighbors(sample['point_clouds'][i][...,:3])
+                mean_dist = np.mean(distances[:, 1:], axis=1)
+                std_dist = np.std(distances[:, 1:], axis=1)
+                dist_threshold = mean_dist + self.std_multiplier * std_dist
+                inliers = np.where(distances[:, 1:] < dist_threshold[:, np.newaxis])
+            elif self.outlier_type == 'radius':
+                neighbors = NearestNeighbors(radius=self.radius).fit(sample['point_clouds'][i][...,:3])
+                distances, _ = neighbors.radius_neighbors(sample['point_clouds'][i][...,:3], return_distance=True)
+                inliers = np.where([len(d) >= self.min_neighbors for d in distances])
+            else:
+                raise ValueError('You should never reach here! outlier_type must be "statistical" or "radius"')
+            if len(inliers[0]) == 0:
+                sample['point_clouds'][i] = sample['point_clouds'][i][:1]
+                # num_outliers = sample['point_clouds'][i].shape[0] - len(inliers[0])
+                # print(f'{num_outliers} outliers removed')
+            else:
+                sample['point_clouds'][i] = sample['point_clouds'][i][inliers]
+        return sample
+
 class Pad():
-    def __init__(self, max_len, pad_type='zero'):
+    def __init__(self, max_len, pad_type='repeat'):
         self.max_len = max_len
         self.pad_type = pad_type
         if pad_type not in ['zero', 'repeat']:
@@ -82,17 +118,18 @@ class RandomScale():
         return sample
     
 class RandomRotate():
-    def __init__(self, angle_min=-np.pi/4, angle_max=np.pi/4):
+    def __init__(self, angle_min=-np.pi, angle_max=np.pi):
         self.angle_min = angle_min
         self.angle_max = angle_max
 
     def __call__(self, sample):
-        angle = np.random.uniform(self.angle_min, self.angle_max)
-        rot_matrix = np.array([[np.cos(angle), 0, np.sin(angle)], [0, 1, 0], [-np.sin(angle), 0, np.cos(angle)]])
+        angle_1 = np.random.uniform(self.angle_min, self.angle_max)
+        angle_2 = np.random.uniform(self.angle_min, self.angle_max)
+        rot_matrix = np.array([[np.cos(angle_1), -np.sin(angle_1), 0], [np.sin(angle_1), np.cos(angle_1), 0], [0, 0, 1]]) @ np.array([[np.cos(angle_2), 0, np.sin(angle_2)], [0, 1, 0], [-np.sin(angle_2), 0, np.cos(angle_2)]])
         for i in range(len(sample['point_clouds'])):
             sample['point_clouds'][i][...,:3] = sample['point_clouds'][i][...,:3] @ rot_matrix
         sample['keypoints'] = sample['keypoints'] @ rot_matrix
-        sample['angle'] = angle
+        sample['angle'] = [angle_1, angle_2]
         return sample
 
 class RandomJitter():
@@ -105,10 +142,26 @@ class RandomJitter():
         return sample
 
 class GetCentroidRadius():
+    def __init__(self, centroid_type='minball'):
+        self.centroid_type = centroid_type
+        if centroid_type not in ['mean', 'minball']:
+            raise ValueError('centroid_type must be "mean" or "minball"')
+        
     def __call__(self, sample):
         pc_cat = np.concatenate(sample['point_clouds'], axis=0)
-        centroid = np.mean(pc_cat[...,:3], axis=0)
-        radius = np.max(np.linalg.norm(pc_cat[...,:3] - centroid, axis=1))
+        pc_dedupe = np.unique(pc_cat[...,:3], axis=0)
+        if self.centroid_type == 'mean':
+            centroid = np.mean(pc_dedupe[...,:3], axis=0)
+            radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
+        elif self.centroid_type == 'minball':
+            try:
+                centroid, radius = get_bounding_ball(pc_dedupe)
+            except:
+                print('Error in minball')
+                centroid = np.mean(pc_dedupe[...,:3], axis=0)
+                radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
+        else:
+            raise ValueError('You should never reach here! centroid_type must be "mean" or "minball"')
         sample['centroid'] = centroid
         sample['radius'] = radius
         return sample
@@ -116,6 +169,7 @@ class GetCentroidRadius():
 class Normalize():
     def __init__(self, feat_scale=None):
         self.feat_scale = feat_scale
+
     def __call__(self, sample):
         for i in range(len(sample['point_clouds'])):
             sample['point_clouds'][i][...,:3] -= sample['centroid'][np.newaxis]
@@ -192,13 +246,15 @@ class TrainTransform():
         self.hparams = hparams
         tsfms = []
         tsfms.append(UniformSample(hparams.clip_len))
+        tsfms.append(GetCentroidRadius(hparams.centroid_type))
         if hparams.multi_frame:
             tsfms.append(MultiFrameAggregate(hparams.num_frames))
+        if hparams.remove_outliers:
+            tsfms.append(RemoveOutliers(hparams.outlier_type, hparams.num_neighbors, hparams.std_multiplier, hparams.radius, hparams.min_neighbors))
         if hparams.random_jitter:
             tsfms.append(RandomApply([RandomJitter(hparams.jitter_std)], prob=hparams.jitter_prob))
         if hparams.flip:
             tsfms.append(RandomApply([Flip(hparams.left_idxs, hparams.right_idxs)], prob=hparams.flip_prob))
-        tsfms.append(GetCentroidRadius())
         if hparams.normalize:
             tsfms.append(Normalize(hparams.feat_scale))
         if hparams.random_scale:
@@ -223,9 +279,11 @@ class ValTransform():
         self.hparams = hparams
         tsfms = []
         tsfms.append(UniformSample(hparams.clip_len))
+        tsfms.append(GetCentroidRadius(hparams.centroid_type))
         if hparams.multi_frame:
             tsfms.append(MultiFrameAggregate(hparams.num_frames))
-        tsfms.append(GetCentroidRadius())
+        if hparams.remove_outliers:
+            tsfms.append(RemoveOutliers(hparams.outlier_type, hparams.num_neighbors, hparams.std_multiplier, hparams.radius, hparams.min_neighbors))
         if hparams.normalize:
             tsfms.append(Normalize())
         if hparams.reduce_keypoint_len:
