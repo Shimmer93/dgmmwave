@@ -4,27 +4,27 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: 100
+epochs: 300
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
 dataset_name: temporal
-train_split: train_xsub_p3
-val_split: val_xsub_p3
-test_split: test_xsub_p3
+train_split: train
+val_split: val
+test_split: test
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
 optim_name: adamw
-lr: 0.00001
-weight_decay: 0.001
+lr: 0.0001
+weight_decay: 0.00001
 momentum: 0.9
 # --------------------------------------
 # Learning rate scheduler parameters
 # --------------------------------------
 sched_name: cosine
 warmup_lr: 0.000001
-min_lr: 0.00001
+min_lr: 0.000001
 warmup_epochs: 20
 # --------------------------------------
 # Model parameters
@@ -52,7 +52,7 @@ gamma: 0.8
 # Augmentation parameters
 # --------------------------------------
 # pipeline
-multi_frame: true
+multi_frame: false
 remove_outliers: true
 random_jitter: true
 flip: false
@@ -63,9 +63,13 @@ reduce_keypoint_len: true
 pad: true
 # parameters
 clip_len: 5
-outlier_type: 'zscore'
-threshold: 2.0
-num_frames: 3
+outlier_type: 'radius'
+num_neighbors: 3
+std_multiplier: 1.0
+radius: 0.2
+min_neighbors: 2
+centroid_type: 'mean'
+num_frames: 1
 jitter_std: 0.01
 jitter_prob: 0.5
 left_idxs: [5,6,7,11,12,13,15,17]
@@ -75,8 +79,8 @@ feat_scale: null
 scale_min: 0.8
 scale_max: 1.2
 scale_prob: 0.5
-angle_min: -0.5
-angle_max: 0.5
+angle_min: -3.141592653589793
+angle_max: 3.141592653589793
 rotate_prob: 0.5
 only_one: true
 keep_type: 'middle'

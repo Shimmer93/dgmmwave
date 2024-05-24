@@ -129,7 +129,7 @@ class RandomRotate():
         for i in range(len(sample['point_clouds'])):
             sample['point_clouds'][i][...,:3] = sample['point_clouds'][i][...,:3] @ rot_matrix
         sample['keypoints'] = sample['keypoints'] @ rot_matrix
-        sample['angle'] = [angle_1, angle_2]
+        sample['rotation_matrix'] = rot_matrix
         return sample
 
 class RandomJitter():
@@ -163,7 +163,7 @@ class GetCentroidRadius():
         else:
             raise ValueError('You should never reach here! centroid_type must be "mean" or "minball"')
         sample['centroid'] = centroid
-        sample['radius'] = radius
+        sample['radius'] = 1.
         return sample
 
 class Normalize():
@@ -176,6 +176,7 @@ class Normalize():
             sample['point_clouds'][i][...,:3] /= sample['radius']
             if self.feat_scale:
                 sample['point_clouds'][i][...,3:] /= np.array(self.feat_scale)[np.newaxis][np.newaxis]
+                sample['feat_scale'] = self.feat_scale
         # print('normalize', len(sample['point_clouds']), len(sample['keypoints']), sample['centroid'], sample['radius'])
         sample['keypoints'] -= sample['centroid'][np.newaxis][np.newaxis]
         sample['keypoints'] /= sample['radius']
@@ -206,6 +207,8 @@ class ToTensor():
             sample['point_clouds'] = torch.from_numpy(sample['point_clouds']).float()
         sample['keypoints'] = torch.from_numpy(sample['keypoints']).float()
         # sample['action'] = torch.tensor(sample['action'])
+        sample['centroid'] = torch.from_numpy(sample['centroid']).float()
+        sample['radius'] = torch.tensor(sample['radius']).float()
         return sample
 
 class ReduceKeypointLen():
@@ -241,9 +244,18 @@ class RandomApply():
                 sample = t(sample)
         return sample
 
-class TrainTransform():
-    def __init__(self, hparams):
+class ComposeTransform():
+    def __init__(self, hparams, transforms):
         self.hparams = hparams
+        self.transforms = transforms
+
+    def __call__(self, sample):
+        for t in self.transforms:
+            sample = t(sample)
+        return sample
+
+class TrainTransform(ComposeTransform):
+    def __init__(self, hparams):
         tsfms = []
         tsfms.append(UniformSample(hparams.clip_len))
         tsfms.append(GetCentroidRadius(hparams.centroid_type))
@@ -267,16 +279,10 @@ class TrainTransform():
             tsfms.append(Pad(hparams.max_len))
         tsfms.append(ToTensor())
 
-        self.transforms = tsfms
-
-    def __call__(self, sample):
-        for t in self.transforms:
-            sample = t(sample)
-        return sample
+        super().__init__(hparams, tsfms)
     
-class ValTransform():
+class ValTransform(ComposeTransform):
     def __init__(self, hparams):
-        self.hparams = hparams
         tsfms = []
         tsfms.append(UniformSample(hparams.clip_len))
         tsfms.append(GetCentroidRadius(hparams.centroid_type))
@@ -292,12 +298,7 @@ class ValTransform():
             tsfms.append(Pad(hparams.max_len))
         tsfms.append(ToTensor())
 
-        self.transforms = tsfms
-
-    def __call__(self, sample):
-        for t in self.transforms:
-            sample = t(sample)
-        return sample
+        super().__init__(hparams, tsfms)
 
 if __name__ == '__main__':
     class hparams:

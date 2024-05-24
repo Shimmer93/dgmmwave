@@ -78,16 +78,19 @@ class LitModel(pl.LightningModule):
         ax_2d = fig.add_subplot(233)
         ax_3d = fig.add_subplot(234, projection='3d')
         ax_pc = fig.add_subplot(235)
+
         ax_pred.set_aspect('equal')
         ax_gt.set_aspect('equal')
         ax_2d.set_aspect('equal')
         ax_3d.set_aspect('equal')
         ax_pc.set_aspect('equal')
+
         ax_pred.set_title('Predicted')
         ax_gt.set_title('Ground Truth')
         ax_2d.set_title('2D')
         ax_3d.set_title('3D')
         ax_pc.set_title('Point Cloud')
+
         for p_hat, p in zip(y_hat[0, 0], y[0, 0]):
             random_color = np.random.rand(3).tolist()
             ax_pred.plot(p_hat[0], p_hat[1], color=random_color, marker='o')
@@ -97,42 +100,66 @@ class LitModel(pl.LightningModule):
         ax_3d.scatter(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], y_hat[0, 0, :, 2], 'b')
         ax_3d.scatter(y[0, 0, :, 0], y[0, 0, :, 1], y[0, 0, :, 2], 'r')
         ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 1], x[0, 0, :, 2], 'g')
+
         wandb.log({'keypoints': wandb.Image(fig)})
         plt.close(fig)
 
     def training_step(self, batch, batch_idx):
         x = batch['point_clouds']
         y = batch['keypoints']
+
         y_hat = self.model(x)
         loss = self.loss(y_hat, y)
+
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
         mpjpe, pampjpe = calulate_error(y_hat, y)
-        self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe})
+
+        self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}, sync_dist=True)
         return loss
     
     def validation_step(self, batch, batch_idx):
         x = batch['point_clouds']
         y = batch['keypoints']
+        c = batch['centroid']
+        r = batch['radius']
+
         y_hat = self.model(x)
         loss = self.loss(y_hat, y)
+
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
+        c = torch2numpy(c)
+        r = torch2numpy(r)
+        y_hat = y_hat * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
+        y = y * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
-        self.log_dict({'val_loss': loss, 'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe})
-        self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
+
+        self.log_dict({'val_loss': loss, 'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
+        if batch_idx == 0:
+            self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
         return loss
     
     def test_step(self, batch, batch_idx):
         x = batch['point_clouds']
         y = batch['keypoints']
+        c = batch['centroid']
+        r = batch['radius']
+
         y_hat = self.model(x)
         loss = self.loss(y_hat, y)
+
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
+        c = torch2numpy(c)
+        r = torch2numpy(r)
+        y_hat = y_hat * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
+        y = y * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
-        self.log_dict({'test_loss': loss, 'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe})
-        self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
+
+        self.log_dict({'test_loss': loss, 'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
+        if batch_idx == 0:
+            self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
         return loss
 
     def configure_optimizers(self):

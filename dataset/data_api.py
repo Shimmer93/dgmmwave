@@ -18,16 +18,10 @@ def create_dataset(hparams, split):
     return dataset
 
 def collate_fn(batch):
-    # transposed_batch = list(zip(*batch))
-    # frms = torch.stack(transposed_batch[0], dim=0)
-    # skls = torch.stack(transposed_batch[1], dim=0)
-    # flow = torch.stack(transposed_batch[2], dim=0)
-    # masks = torch.stack(transposed_batch[3], dim=0)
-    # dmaps = torch.stack(transposed_batch[4], dim=0)
-    # return frms, skls, flow, masks #, dmaps
     batch_data = {}
-    for key in ['point_clouds', 'keypoints']:
+    for key in ['point_clouds', 'keypoints', 'centroid', 'radius']:
         batch_data[key] = torch.stack([sample[key] for sample in batch], dim=0)
+
     return batch_data
 
 class LitDataModule(pl.LightningDataModule):
