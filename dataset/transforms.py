@@ -9,6 +9,26 @@ def log(x):
     with open('log.txt', 'a') as f:
         f.write(str(x) + '\n')
 
+class GenerateSegmentationGroundTruth():
+    def __init__(self):
+        pass
+
+    def __call__(self, sample):
+        new_pcs = []
+        for i in range(len(sample['keypoints'])):
+            neighbors = NearestNeighbors(n_neighbors=1).fit(sample['keypoints'][i])
+            _, indices = neighbors.kneighbors(sample['point_clouds'][i][...,:3])
+            new_pcs.append(np.concatenate([sample['point_clouds'][i], indices], axis=-1))
+        # try:
+        #     sample['point_clouds'] = np.stack(new_pcs, axis=0)
+        # except:
+        #     for i in range(len(new_pcs)):
+        #         print(new_pcs[i].shape)
+        #     raise ValueError('Error in GenerateSegmentationGroundTruth')
+        sample['point_clouds'] = new_pcs
+
+        return sample
+
 class RemoveOutliers():
     def __init__(self, outlier_type='statistical', num_neighbors=3, std_multiplier=1.0, radius=1.0, min_neighbors=2):
         self.outlier_type = outlier_type
@@ -273,6 +293,8 @@ class TrainTransform(ComposeTransform):
             tsfms.append(RandomApply([RandomScale(hparams.scale_min, hparams.scale_max)], prob=hparams.scale_prob))
         if hparams.random_rotate:
             tsfms.append(RandomApply([RandomRotate(hparams.angle_min, hparams.angle_max)], prob=hparams.rotate_prob))
+        if hparams.gen_seg_gt:
+            tsfms.append(GenerateSegmentationGroundTruth())
         if hparams.reduce_keypoint_len:
             tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
         if hparams.pad:
@@ -292,6 +314,8 @@ class ValTransform(ComposeTransform):
             tsfms.append(RemoveOutliers(hparams.outlier_type, hparams.num_neighbors, hparams.std_multiplier, hparams.radius, hparams.min_neighbors))
         if hparams.normalize:
             tsfms.append(Normalize())
+        if hparams.gen_seg_gt:
+            tsfms.append(GenerateSegmentationGroundTruth())
         if hparams.reduce_keypoint_len:
             tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
         if hparams.pad:

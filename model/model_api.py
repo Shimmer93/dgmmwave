@@ -14,6 +14,7 @@ from collections import OrderedDict
 import wandb
 
 from model.P4Transformer.model import P4Transformer
+from model.P4Transformer.model_da import P4TransformerDA
 from model.debug_model import DebugModel
 from model.metrics import calulate_error
 from loss.pose import GeodesicLoss
@@ -26,6 +27,12 @@ def create_model(hparams):
                               emb_relu=hparams.emb_relu,
                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
                               mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
+    elif hparams.model_name.lower() == 'p4tda':
+        model = P4TransformerDA(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+                              emb_relu=hparams.emb_relu,
+                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, mem_size=hparams.mem_size, features=hparams.features)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
     else:
@@ -104,12 +111,28 @@ class LitModel(pl.LightningModule):
         wandb.log({'keypoints': wandb.Image(fig)})
         plt.close(fig)
 
-    def training_step(self, batch, batch_idx):
+    def _calculate_loss(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
+        if self.hparams.model_name.lower() == 'p4t':
+            y_hat = self.model(x)
+            loss = self.loss(y_hat, y)
+        elif self.hparams.model_name.lower() == 'p4tda':
+            x, s = torch.split(x, [5, 1], dim=-1)
+            y_hat, s_hat, l_rec = self.model(x)
+            l_pc = self.loss(y_hat, y)
+            # print(s_hat.squeeze().shape, s.squeeze().shape)
+            l_seg = F.cross_entropy(s_hat.permute(0, 2, 1, 3), s.squeeze(-1).long())
+            # print(l_pc, l_seg, l_rec)
+            loss = l_pc + self.hparams.w_seg * l_seg + self.hparams.w_rec * l_rec
+        else:
+            raise NotImplementedError
+        
+        return loss, x, y, y_hat
 
-        y_hat = self.model(x)
-        loss = self.loss(y_hat, y)
+
+    def training_step(self, batch, batch_idx):
+        loss, x, y, y_hat = self._calculate_loss(batch)
 
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
@@ -119,13 +142,10 @@ class LitModel(pl.LightningModule):
         return loss
     
     def validation_step(self, batch, batch_idx):
-        x = batch['point_clouds']
-        y = batch['keypoints']
         c = batch['centroid']
         r = batch['radius']
 
-        y_hat = self.model(x)
-        loss = self.loss(y_hat, y)
+        loss, x, y, y_hat = self._calculate_loss(batch)
 
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
@@ -141,13 +161,10 @@ class LitModel(pl.LightningModule):
         return loss
     
     def test_step(self, batch, batch_idx):
-        x = batch['point_clouds']
-        y = batch['keypoints']
         c = batch['centroid']
         r = batch['radius']
 
-        y_hat = self.model(x)
-        loss = self.loss(y_hat, y)
+        loss, x, y, y_hat = self._calculate_loss(batch)
 
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)

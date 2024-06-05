@@ -26,7 +26,7 @@ def main(args):
         TQDMProgressBar(refresh_rate=20)
     ]
 
-    wandb_on = True if args.dev+args.test==0 else False
+    wandb_on = True #if args.dev+args.test==0 else False
     if wandb_on:
         wandb_logger = WandbLogger(
             project=args.wandb_project_name,

@@ -9,9 +9,9 @@ epochs: 300
 # Dataset parameters
 # --------------------------------------
 dataset_name: temporal
-train_split: train
-val_split: val
-test_split: test
+train_split: train_s1_p1
+val_split: val_s1_p1
+test_split: test_s1_p1
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -41,7 +41,8 @@ depth: 5
 heads: 8
 dim_head: 128
 mlp_dim: 2048
-output_dim: 66
+output_dim: 51
+mem_size: 512
 features: 2
 # --------------------------------------
 # Loss parameters
@@ -52,7 +53,7 @@ gamma: 0.8
 # Augmentation parameters
 # --------------------------------------
 # pipeline
-multi_frame: false
+multi_frame: true
 remove_outliers: false
 random_jitter: true
 flip: false
@@ -62,15 +63,15 @@ random_rotate: true
 reduce_keypoint_len: true
 pad: true
 # parameters
-clip_len: 5
+clip_len: 7
 outlier_type: 'radius'
 num_neighbors: 3
 std_multiplier: 1.0
 radius: 0.2
 min_neighbors: 2
-centroid_type: 'mean'
-num_frames: 1
-jitter_std: 0.01
+centroid_type: 'minball'
+num_frames: 3
+jitter_std: 0.001
 jitter_prob: 0.5
 left_idxs: [5,6,7,11,12,13,15,17]
 right_idxs: [2,3,4,8,9,10,14,16]
@@ -85,4 +86,4 @@ rotate_prob: 0.5
 only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
-max_len: 1024
+max_len: 128

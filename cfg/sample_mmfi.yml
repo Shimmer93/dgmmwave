@@ -53,7 +53,7 @@ gamma: 0.8
 # --------------------------------------
 # pipeline
 multi_frame: true
-remove_outliers: true
+remove_outliers: false
 random_jitter: true
 flip: false
 normalize: true
