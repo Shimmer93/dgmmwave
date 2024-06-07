@@ -118,13 +118,19 @@ class LitModel(pl.LightningModule):
             y_hat = self.model(x)
             loss = self.loss(y_hat, y)
         elif self.hparams.model_name.lower() == 'p4tda':
-            x, s = torch.split(x, [5, 1], dim=-1)
-            y_hat, s_hat, l_rec = self.model(x)
-            l_pc = self.loss(y_hat, y)
-            # print(s_hat.squeeze().shape, s.squeeze().shape)
-            l_seg = F.cross_entropy(s_hat.permute(0, 2, 1, 3), s.squeeze(-1).long())
-            # print(l_pc, l_seg, l_rec)
-            loss = l_pc + self.hparams.w_seg * l_seg + self.hparams.w_rec * l_rec
+            if self.hparams.mode == 'train':
+                x, s = torch.split(x, [5, 1], dim=-1)
+                y_hat, s_hat, l_rec = self.model(x)
+                l_pc = self.loss(y_hat, y)
+                # print(s_hat.squeeze().shape, s.squeeze().shape)
+                l_seg = F.cross_entropy(s_hat.permute(0, 2, 1, 3), s.squeeze(-1).long())
+                # print(l_pc, l_seg, l_rec)
+                loss = l_pc + self.hparams.w_seg * l_seg + self.hparams.w_rec * l_rec
+            elif self.hparams.mode == 'adapt':
+                y_hat, _, l_rec = self.model(x)
+                loss = l_rec
+            else:
+                raise ValueError('mode must be train or adapt!')
         else:
             raise NotImplementedError
         

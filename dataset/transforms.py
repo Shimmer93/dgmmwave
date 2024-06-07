@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from scipy import stats
 from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
 
 def log(x):
@@ -36,7 +37,7 @@ class RemoveOutliers():
         self.std_multiplier = std_multiplier
         self.radius = radius
         self.min_neighbors = min_neighbors
-        if outlier_type not in ['statistical', 'radius']:
+        if outlier_type not in ['statistical', 'radius', 'cluster']:
             raise ValueError('outlier_type must be "statistical" or "radius"')
 
     def __call__(self, sample):
@@ -52,6 +53,9 @@ class RemoveOutliers():
                 neighbors = NearestNeighbors(radius=self.radius).fit(sample['point_clouds'][i][...,:3])
                 distances, _ = neighbors.radius_neighbors(sample['point_clouds'][i][...,:3], return_distance=True)
                 inliers = np.where([len(d) >= self.min_neighbors for d in distances])
+            elif self.outlier_type == 'cluster':
+                clusterer = HDBSCAN(min_cluster_size=self.min_neighbors)
+                inliers = clusterer.fit_predict(sample['point_clouds'][i][...,:3]) != -1
             else:
                 raise ValueError('You should never reach here! outlier_type must be "statistical" or "radius"')
             if len(inliers[0]) == 0:

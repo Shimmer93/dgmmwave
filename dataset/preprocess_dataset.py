@@ -253,7 +253,8 @@ class MRIPreprocessor(Preprocessor):
                 for j in range(split[0], split[1]):
                     pc = pc_df[pc_df['Camera Frame'] == j][['X', 'Y', 'Z', 'Doppler', 'Intensity']].values
                     pc[:, -1] = self._normalize_intensity(pc[:, -1], 200.0)
-                    pc = pc[:, [2, 0, 1, 3, 4]]
+                    pc = pc[:, [0, 2, 1, 3, 4]]
+                    pc[:, 0] *= -1
                     pcs.append(pc)
                 kps = labels['refined_gt_kps'][split[0]:split[1]].transpose(0, 2, 1)
                 self.results['sequences'].append({

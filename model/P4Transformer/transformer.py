@@ -60,6 +60,39 @@ class Attention(nn.Module):
         out = rearrange(out, 'b h n d -> b n (h d)')
         out =  self.to_out(out)
         return out
+    
+class QueryAttention(nn.Module):
+    def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0.):
+        super().__init__()
+        inner_dim = dim_head *  heads
+        project_out = not (heads == 1 and dim_head == dim)
+
+        self.heads = heads
+        self.scale = dim_head ** -0.5
+
+        self.to_q = nn.Linear(dim, inner_dim, bias = False)
+        self.to_kv = nn.Linear(dim, inner_dim * 2, bias = False)
+
+        self.to_out = nn.Sequential(
+            nn.Linear(inner_dim, dim),
+            nn.GELU(),
+            nn.Dropout(dropout)
+        ) if project_out else nn.Identity()
+
+    def forward(self, x1, x2):
+        b, n, _, h = *x2.shape, self.heads
+        q = self.to_q(x1)
+        kv = self.to_kv(x2).chunk(2, dim = -1)
+        k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), kv)
+
+        dots = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
+
+        attn = dots.softmax(dim=-1)
+
+        out = einsum('b h i j, b h j d -> b h i d', attn, v)
+        out = rearrange(out, 'b h n d -> b n (h d)')
+        out =  self.to_out(out)
+        return out
 
 class Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):

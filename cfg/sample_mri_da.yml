@@ -9,9 +9,9 @@ epochs: 300
 # Dataset parameters
 # --------------------------------------
 dataset_name: temporal
-train_split: train_xsub_p3
-val_split: val_xsub_p3
-test_split: test_xsub_p3
+train_split: train_s1_p1
+val_split: val_s1_p1
+test_split: test_s1_p1
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -29,7 +29,8 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-model_name: p4t
+mode: train
+model_name: p4tda
 radius: 0.7
 nsamples: 32
 spatial_stride: 8
@@ -49,6 +50,8 @@ features: 2
 # --------------------------------------
 loss_name: mse
 gamma: 0.8
+w_seg: 1.0
+w_rec: 1.0
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -61,7 +64,7 @@ normalize: true
 random_scale: true
 random_rotate: true
 reduce_keypoint_len: true
-gen_seg_gt: false
+gen_seg_gt: true
 pad: true
 # parameters
 clip_len: 7

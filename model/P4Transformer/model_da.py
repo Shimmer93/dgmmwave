@@ -101,7 +101,6 @@ class P4TransformerDA(nn.Module):
         # print('output_seg: ', output_seg.size())
         # torch.Size([128, 7, 17, 128])
 
-
         output_rec = torch.max(input=output_rec, dim=1, keepdim=False, out=None)[0]
         output_rec = self.mlp_head(output_rec)
         output_rec = output_rec.reshape(output_rec.shape[0], 1, output_rec.shape[-1]//3, 3) # B 1 J 3
