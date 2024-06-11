@@ -9,14 +9,14 @@ epochs: 300
 # Dataset parameters
 # --------------------------------------
 dataset_name: temporal
-train_split: train_xsub_p3
-val_split: val_xsub_p3
-test_split: test_xsub_p3
+train_split: train_rdn_p3
+val_split: val_rdn_p3
+test_split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
 optim_name: adamw
-lr: 0.0001
+lr: 0.00001
 weight_decay: 0.00001
 momentum: 0.9
 # --------------------------------------
@@ -87,4 +87,4 @@ rotate_prob: 0.5
 only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
-max_len: 128
+max_len: 1024

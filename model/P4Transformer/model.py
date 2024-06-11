@@ -41,6 +41,9 @@ class P4Transformer(nn.Module):
         device = input.get_device()
         xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,3:].permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
+        # print('xyzs: ', xyzs.max().item(), xyzs.min().item())
+        # print('features: ', features.max().item(), features.min().item())
+
         xyzts = []
         xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)
         xyzs = [torch.squeeze(input=xyz, dim=1).contiguous() for xyz in xyzs]
@@ -55,13 +58,18 @@ class P4Transformer(nn.Module):
         features = torch.reshape(input=features, shape=(features.shape[0], features.shape[1]*features.shape[2], features.shape[3]))         # [B, L*n, C]
         xyzts = self.pos_embedding(xyzts.permute(0, 2, 1)).permute(0, 2, 1)
 
+        # print('xyzts: ', xyzts.max().item(), xyzts.min().item())
+
         embedding = xyzts + features
 
         if self.emb_relu:
             embedding = self.emb_relu(embedding)
 
         output = self.transformer(embedding)
+        # print('output after transformer: ', output.max().item(), output.min().item())
+
         output = torch.max(input=output, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
         output = output.reshape(output.shape[0], 1, output.shape[-1]//3, 3) # B 1 J 3
+        # print('output after mlp_head: ', output.max().item(), output.min().item())
         return output

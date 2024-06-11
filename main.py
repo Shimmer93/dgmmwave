@@ -1,10 +1,10 @@
 from argparse import ArgumentParser
-import wandb
+# import wandb
 import os
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import TensorBoardLogger #WandbLogger, 
 from pytorch_lightning.strategies.ddp import DDPStrategy
 
 from dataset.data_api import LitDataModule
@@ -18,7 +18,7 @@ def main(args):
     callbacks = [
         ModelCheckpoint(
             monitor='val_mpjpe',
-            dirpath=args.model_ckpt_dir,
+            dirpath=os.path.join('logs', args.exp_name, args.version),
             filename=args.model_name+'-{epoch}-{val_loss:.4f}',
             save_top_k=1,
             save_last=True,
@@ -26,19 +26,23 @@ def main(args):
         TQDMProgressBar(refresh_rate=20)
     ]
 
-    wandb_on = True #if args.dev+args.test==0 else False
-    if wandb_on:
-        wandb_logger = WandbLogger(
-            project=args.wandb_project_name,
-            save_dir=args.wandb_save_dir,
-            offline=args.wandb_offline,
-            log_model=False,
-            job_type='train')
-        wandb_logger.log_hyperparams(args)
+    # wandb_on = True #if args.dev+args.test==0 else False
+    # if wandb_on:
+    #     wandb_logger = WandbLogger(
+    #         project=args.wandb_project_name,
+    #         save_dir=args.wandb_save_dir,
+    #         offline=args.wandb_offline,
+    #         log_model=False,
+    #         job_type='train')
+    #     wandb_logger.log_hyperparams(args)
+    logger = TensorBoardLogger(save_dir='logs', 
+                               name=args.exp_name,
+                               version=args.version)
+    logger.log_hyperparams(args)
 
     trainer = pl.Trainer(
         fast_dev_run=args.dev,
-        logger=wandb_logger if wandb_on else None,
+        logger=logger, # wandb_logger if wandb_on else None,
         max_epochs=args.epochs,
         devices=args.gpus,
         accelerator="gpu",
@@ -58,8 +62,8 @@ def main(args):
         if args.dev==0:
             trainer.test(ckpt_path="best", datamodule=dm)
 
-    if wandb_on:
-        wandb.finish()
+    # if wandb_on:
+    #     wandb.finish()
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -71,14 +75,14 @@ if __name__ == "__main__":
     parser.add_argument('-w', "--num_workers", type=int, default=4)
     parser.add_argument('-b', "--batch_size", type=int, default=2048)
     parser.add_argument('-e', "--batch_size_eva", type=int, default=1000, help='batch_size for evaluation')
+    parser.add_argument('--clip_grad', type=float, default=1.0)
     parser.add_argument("--model_ckpt_dir", type=str, default="./model_ckpt/")
     parser.add_argument("--data_dir", type=str, default="../../data/imagenet")
     parser.add_argument('--pin_memory', action='store_true')
     parser.add_argument("--checkpoint_path", type=str, default=None)
     parser.add_argument('--test', action='store_true')
-    parser.add_argument("--wandb_project_name", type=str, default="fasternet")
-    parser.add_argument('--wandb_offline', action='store_true')
-    parser.add_argument('--wandb_save_dir', type=str, default='./')
+    parser.add_argument('--exp_name', type=str, default='fasternet')
+    parser.add_argument("--version", type=str, default="0")
 
     args = parser.parse_args()
     cfg = load_cfg(args.cfg)
@@ -87,6 +91,6 @@ if __name__ == "__main__":
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
     # please change {WANDB_API_KEY} to your personal api_key before using wandb
-    os.environ["WANDB_API_KEY"] = "60b29f8aae47df8755cbd430f0179c0cd8797bf6"
+    # os.environ["WANDB_API_KEY"] = "60b29f8aae47df8755cbd430f0179c0cd8797bf6"
 
     main(args)

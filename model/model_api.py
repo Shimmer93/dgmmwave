@@ -11,7 +11,8 @@ from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import matplotlib.pyplot as plt
 import os
 from collections import OrderedDict
-import wandb
+# import wandb
+# import tensorboard
 
 from model.P4Transformer.model import P4Transformer
 from model.P4Transformer.model_da import P4TransformerDA
@@ -108,7 +109,9 @@ class LitModel(pl.LightningModule):
         ax_3d.scatter(y[0, 0, :, 0], y[0, 0, :, 1], y[0, 0, :, 2], 'r')
         ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 1], x[0, 0, :, 2], 'g')
 
-        wandb.log({'keypoints': wandb.Image(fig)})
+        # wandb.log({'keypoints': wandb.Image(fig)})
+        tensorboard = self.logger.experiment
+        tensorboard.add_figure('keypoints', fig, global_step=self.global_step)
         plt.close(fig)
 
     def _calculate_loss(self, batch):

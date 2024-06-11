@@ -37,12 +37,24 @@ class P4TransformerDA(nn.Module):
 
         self.deconv = P4DTransConv(in_planes=dim, mlp_planes=[dim], mlp_activation=[True], mlp_batch_norm=[True], original_planes=features)
         self.seg_head = nn.Conv2d(in_channels=dim, out_channels=output_dim//3, kernel_size=1, stride=1, padding=0)
+        self.pc_head = nn.Conv2d(in_channels=dim, out_channels=dim//8, kernel_size=1, stride=1, padding=0)
 
-        self.mlp_head = nn.Sequential(
+        self.skl_head = nn.Sequential(
             nn.LayerNorm(dim),
-            nn.Linear(dim, mlp_dim),
+            # nn.Linear(dim, mlp_dim),
+            # nn.GELU(),
+            nn.Linear(dim, output_dim//3 * dim//8),
+        )
+
+        self.num_joints = output_dim//3
+        self.final_dim = dim//8
+
+        self.final_attn = QueryAttention(self.final_dim, heads=8, dim_head=64, dropout=0.1)
+        self.final_head = nn.Sequential(
+            nn.LayerNorm(self.final_dim),
+            nn.Linear(self.final_dim, self.final_dim),
             nn.GELU(),
-            nn.Linear(mlp_dim, output_dim),
+            nn.Linear(self.final_dim, 3),
         )
 
     def forward_mem(self, y):
@@ -92,16 +104,27 @@ class P4TransformerDA(nn.Module):
         loss_rec = F.mse_loss(output_rec, output)
 
         # torch.Size([100, 7x16, 1024])
-        output_seg = torch.reshape(input=output_rec, shape=(B, L, N, output_rec.shape[2]))
-        output_seg = output_seg.permute(0, 1, 3, 2)
+        output_feat = torch.reshape(input=output_rec, shape=(B, L, N, output_rec.shape[2]))
+        output_feat = output_feat.permute(0, 1, 3, 2)
         # print(xyzs0.shape, input[:,:,:,:3].shape, output_seg.shape, features0.shape)
         # torch.Size([100, 7, 16, 3]) torch.Size([100, 7, 128, 3]) torch.Size([100, 7, 1024, 16]) torch.Size([100, 7, 1024, 16])
-        _, output_seg = self.deconv(xyzs0, input[:,:,:,:3], output_seg.float(), input[:,:,:,3:].permute(0,1,3,2).float())
-        output_seg = self.seg_head(output_seg.transpose(1,2)).transpose(1,2)
+        _, output_feat = self.deconv(xyzs0, input[:,:,:,:3], output_feat.float(), input[:,:,:,3:].permute(0,1,3,2).float())
+        output_seg = self.seg_head(output_feat.transpose(1,2)).transpose(1,2)
         # print('output_seg: ', output_seg.size())
         # torch.Size([128, 7, 17, 128])
+        output_pc = self.pc_head(output_feat.transpose(1,2)).transpose(1,2) # B L D N
+        output_pc = output_pc[:, (output_pc.shape[1]-1)//2, ...] # B D N
+        # output_pc = torch.max(input=output_pc, dim=1, keepdim=False, out=None)[0] # B N D
+        output_pc = output_pc.transpose(1, 2) # B N D
+        # print('output_pc: ', output_pc.size())
 
-        output_rec = torch.max(input=output_rec, dim=1, keepdim=False, out=None)[0]
-        output_rec = self.mlp_head(output_rec)
-        output_rec = output_rec.reshape(output_rec.shape[0], 1, output_rec.shape[-1]//3, 3) # B 1 J 3
-        return output_rec, output_seg, loss_rec
+        output_skl = torch.max(input=output_rec, dim=1, keepdim=False, out=None)[0]
+        output_skl = self.skl_head(output_skl)
+        # print('output_skl: ', output_skl.size())
+        output_skl = output_skl.reshape(output_skl.shape[0], self.num_joints, self.final_dim) # B J D
+
+        output_skl = self.final_attn(output_skl, output_pc)
+        output_skl = self.final_head(output_skl)
+        output_skl = torch.unsqueeze(input=output_skl, dim=1)
+
+        return output_skl, output_seg, loss_rec

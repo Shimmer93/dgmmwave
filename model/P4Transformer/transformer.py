@@ -83,6 +83,7 @@ class QueryAttention(nn.Module):
         b, n, _, h = *x2.shape, self.heads
         q = self.to_q(x1)
         kv = self.to_kv(x2).chunk(2, dim = -1)
+        q = rearrange(q, 'b n (h d) -> b h n d', h = h)
         k, v = map(lambda t: rearrange(t, 'b n (h d) -> b h n d', h = h), kv)
 
         dots = einsum('b h i d, b h j d -> b h i j', q, k) * self.scale
