@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 # import wandb
 import os
 
+import torch
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger #WandbLogger, 
@@ -14,6 +15,8 @@ from misc.utils import load_cfg, merge_args_cfg
 def main(args):
     dm = LitDataModule(hparams=args)
     model = LitModel(hparams=args)
+    if args.only_load_model and args.checkpoint_path is not None:
+        model.load_state_dict(torch.load(args.checkpoint_path)['state_dict'])
 
     callbacks = [
         ModelCheckpoint(
@@ -56,9 +59,9 @@ def main(args):
     )
 
     if bool(args.test):
-        trainer.test(model, datamodule=dm, ckpt_path=args.checkpoint_path)
+        trainer.test(model, datamodule=dm, ckpt_path=None if args.only_load_model else args.checkpoint_path)
     else:
-        trainer.fit(model, datamodule=dm, ckpt_path=args.checkpoint_path)
+        trainer.fit(model, datamodule=dm, ckpt_path=None if args.only_load_model else args.checkpoint_path)
         if args.dev==0:
             trainer.test(ckpt_path="best", datamodule=dm)
 
@@ -83,6 +86,7 @@ if __name__ == "__main__":
     parser.add_argument('--test', action='store_true')
     parser.add_argument('--exp_name', type=str, default='fasternet')
     parser.add_argument("--version", type=str, default="0")
+    parser.add_argument('--only_load_model', action='store_true')
 
     args = parser.parse_args()
     cfg = load_cfg(args.cfg)

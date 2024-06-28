@@ -16,7 +16,7 @@ test_split: test
 # Optimizer parameters
 # --------------------------------------
 optim_name: adamw
-lr: 0.0001
+lr: 0.00001
 weight_decay: 0.00001
 momentum: 0.9
 # --------------------------------------
@@ -42,6 +42,7 @@ heads: 8
 dim_head: 128
 mlp_dim: 2048
 output_dim: 66
+mem_size: 512
 features: 2
 # --------------------------------------
 # Loss parameters
@@ -60,6 +61,7 @@ normalize: true
 random_scale: true
 random_rotate: true
 reduce_keypoint_len: true
+gen_seg_gt: false
 pad: true
 # parameters
 clip_len: 5

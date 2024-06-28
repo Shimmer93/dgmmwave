@@ -37,8 +37,8 @@ class RemoveOutliers():
         self.std_multiplier = std_multiplier
         self.radius = radius
         self.min_neighbors = min_neighbors
-        if outlier_type not in ['statistical', 'radius', 'cluster']:
-            raise ValueError('outlier_type must be "statistical" or "radius"')
+        if outlier_type not in ['statistical', 'radius', 'cluster', 'box']:
+            raise ValueError('outlier_type must be "statistical" or "radius" or "cluster" or "box"')
 
     def __call__(self, sample):
         for i in range(len(sample['point_clouds'])):
@@ -56,8 +56,10 @@ class RemoveOutliers():
             elif self.outlier_type == 'cluster':
                 clusterer = HDBSCAN(min_cluster_size=self.min_neighbors)
                 inliers = clusterer.fit_predict(sample['point_clouds'][i][...,:3]) != -1
+            elif self.outlier_type == 'box':
+                inliers = np.where(np.all(np.abs(sample['point_clouds'][i][...,:2]) < self.radius, axis=1))
             else:
-                raise ValueError('You should never reach here! outlier_type must be "statistical" or "radius"')
+                raise ValueError('You should never reach here!')
             if len(inliers[0]) == 0:
                 sample['point_clouds'][i] = sample['point_clouds'][i][:1]
                 # num_outliers = sample['point_clouds'][i].shape[0] - len(inliers[0])
