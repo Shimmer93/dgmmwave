@@ -4,7 +4,7 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: 300
+epochs: 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
@@ -29,7 +29,7 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-mode: train
+mode: adapt
 model_name: p4tda
 radius: 0.7
 nsamples: 32
@@ -65,7 +65,7 @@ random_scale: true
 random_rotate: false
 reduce_keypoint_len: true
 pad: true
-gen_seg_gt: true
+gen_seg_gt: false
 # parameters
 clip_len: 7
 outlier_type: 'box'

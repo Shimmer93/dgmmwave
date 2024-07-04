@@ -32,3 +32,11 @@ class TemporalDataset(Dataset):
         # sample = self.data[idx]
         sample = self.transform(sample)
         return sample
+    
+    @staticmethod
+    def collate_fn(batch):
+        batch_data = {}
+        for key in ['point_clouds', 'keypoints', 'centroid', 'radius']:
+            batch_data[key] = torch.stack([sample[key] for sample in batch], dim=0)
+
+        return batch_data

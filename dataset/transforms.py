@@ -5,6 +5,8 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
 
+from misc.skeleton import coco2simplecoco, mmbody2simplecoco
+
 def log(x):
     print(x)
     with open('log.txt', 'a') as f:
@@ -224,6 +226,21 @@ class Flip():
         sample['keypoints'] = sample['keypoints'][:, indices]
         sample['keypoints'][..., 0] *= -1
         return sample
+    
+class ToSimpleCOCO():
+    def __init__(self, skeleton_type='mmbody'):
+        self.skeleton_type = skeleton_type
+        if skeleton_type not in ['mmbody', 'coco']:
+            raise ValueError('skeleton_type must be "mmbody" or "coco"')
+        
+    def __call__(self, sample):
+        if self.skeleton_type == 'mmbody':
+            sample['keypoints'] = mmbody2simplecoco(sample['keypoints'])
+        elif self.skeleton_type == 'coco':
+            sample['keypoints'] = coco2simplecoco(sample['keypoints'])
+        else:
+            raise ValueError('You should never reach here! skeleton_type must be "mmbody" or "coco"')
+        return sample
 
 class ToTensor():
     def __call__(self, sample):
@@ -305,6 +322,8 @@ class TrainTransform(ComposeTransform):
             tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
         if hparams.pad:
             tsfms.append(Pad(hparams.max_len))
+        if hparams.to_simple_coco:
+            tsfms.append(ToSimpleCOCO(hparams.skeleton_type))
         tsfms.append(ToTensor())
 
         super().__init__(hparams, tsfms)
@@ -326,6 +345,8 @@ class ValTransform(ComposeTransform):
             tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
         if hparams.pad:
             tsfms.append(Pad(hparams.max_len))
+        if hparams.to_simple_coco:
+            tsfms.append(ToSimpleCOCO(hparams.skeleton_type))
         tsfms.append(ToTensor())
 
         super().__init__(hparams, tsfms)

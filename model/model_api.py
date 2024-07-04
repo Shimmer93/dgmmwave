@@ -18,8 +18,9 @@ from model.P4Transformer.model import P4Transformer
 from model.P4Transformer.model_da import P4TransformerDA
 from model.debug_model import DebugModel
 from model.metrics import calulate_error
-from loss.pose import GeodesicLoss
+from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
 from misc.utils import torch2numpy
+from misc.skeleton import simpleCocoSkeleton
 
 def create_model(hparams):
     if hparams.model_name.lower() == 'p4t':
@@ -41,13 +42,22 @@ def create_model(hparams):
     
     return model
 
-def create_loss(hparams):
-    if hparams.loss_name == 'mse':
-        return nn.MSELoss()
-    elif hparams.loss_name == 'geodesic':
-        return GeodesicLoss()
-    else:
-        raise NotImplementedError
+def create_losses(hparams):
+    losses = []
+    for loss_name in hparams.loss_names:
+        if loss_name == 'mse':
+            losses['pc'] = nn.MSELoss()
+        elif loss_name == 'segment':
+            losses['seg'] = nn.CrossEntropyLoss()
+        elif loss_name == 'geodesic':
+            losses['geo'] = GeodesicLoss()
+        elif loss_name == 'symmetry':
+            losses['sym'] = SymmetryLoss(left_bones=simpleCocoSkeleton.left_bones, right_bones=simpleCocoSkeleton.right_bones)
+        elif loss_name == 'reference_bone':
+            losses['ref'] = ReferenceBoneLoss(bones=simpleCocoSkeleton.bones, threshold=hparams.ref_bone_threshold)
+        else:
+            raise NotImplementedError
+    return losses
 
 def create_optimizer(hparams, mparams):
     if hparams.optim_name == 'adam':
@@ -77,7 +87,7 @@ class LitModel(pl.LightningModule):
         super().__init__()
         self.save_hyperparameters(hparams)
         self.model = create_model(hparams)
-        self.loss = create_loss(hparams)
+        self.losses = create_losses(hparams)
 
     def _vis_pred_gt_keypoints(self, y_hat, y, x):
         fig = plt.figure()
@@ -119,19 +129,22 @@ class LitModel(pl.LightningModule):
         y = batch['keypoints']
         if self.hparams.model_name.lower() == 'p4t':
             y_hat = self.model(x)
-            loss = self.loss(y_hat, y)
+            loss = self.losses['pc'](y_hat, y)
         elif self.hparams.model_name.lower() == 'p4tda':
             if self.hparams.mode == 'train':
                 x, s = torch.split(x, [5, 1], dim=-1)
                 y_hat, s_hat, l_rec = self.model(x)
-                l_pc = self.loss(y_hat, y)
+                l_pc = self.losses['pc'](y_hat, y)
                 # print(s_hat.squeeze().shape, s.squeeze().shape)
-                l_seg = F.cross_entropy(s_hat.permute(0, 2, 1, 3), s.squeeze(-1).long())
+                l_seg = self.losses['seg'](s_hat.permute(0, 2, 1, 3), s.squeeze(-1).long())
                 # print(l_pc, l_seg, l_rec)
                 loss = l_pc + self.hparams.w_seg * l_seg + self.hparams.w_rec * l_rec
             elif self.hparams.mode == 'adapt':
-                y_hat, _, l_rec = self.model(x)
-                loss = l_rec
+                y_ref = batch['ref_keypoints']
+                y_hat, y, l_rec = self.model(x)
+                l_ref = self.losses['ref'](y, y_ref)
+                l_sym = self.losses['sym'](y)
+                loss = self.hparams.w_rec * l_rec + self.hparams.w_ref * l_ref + self.hparams.w_sym * l_sym
             else:
                 raise ValueError('mode must be train or adapt!')
         else:
