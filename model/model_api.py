@@ -9,6 +9,7 @@ import torch.optim.lr_scheduler as sched
 import pytorch_lightning as pl
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import matplotlib.pyplot as plt
+
 import os
 from collections import OrderedDict
 # import wandb
@@ -16,11 +17,13 @@ from collections import OrderedDict
 
 from model.P4Transformer.model import P4Transformer
 from model.P4Transformer.model_da import P4TransformerDA
+from model.P4Transformer.model_da2 import P4TransformerDA2
 from model.debug_model import DebugModel
 from model.metrics import calulate_error
 from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
+from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
 from misc.utils import torch2numpy
-from misc.skeleton import simpleCocoSkeleton
+from misc.skeleton import SimpleCOCOSkeleton
 
 def create_model(hparams):
     if hparams.model_name.lower() == 'p4t':
@@ -35,6 +38,12 @@ def create_model(hparams):
                               emb_relu=hparams.emb_relu,
                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
                               mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, mem_size=hparams.mem_size, features=hparams.features)
+    elif hparams.model_name.lower() == 'p4tda2':
+        model = P4TransformerDA2(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+                              emb_relu=hparams.emb_relu,
+                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, mem_size=hparams.mem_size, features=hparams.features)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
     else:
@@ -43,7 +52,7 @@ def create_model(hparams):
     return model
 
 def create_losses(hparams):
-    losses = []
+    losses = {}
     for loss_name in hparams.loss_names:
         if loss_name == 'mse':
             losses['pc'] = nn.MSELoss()
@@ -52,9 +61,13 @@ def create_losses(hparams):
         elif loss_name == 'geodesic':
             losses['geo'] = GeodesicLoss()
         elif loss_name == 'symmetry':
-            losses['sym'] = SymmetryLoss(left_bones=simpleCocoSkeleton.left_bones, right_bones=simpleCocoSkeleton.right_bones)
+            losses['sym'] = SymmetryLoss(left_bones=SimpleCOCOSkeleton.left_bones, right_bones=SimpleCOCOSkeleton.right_bones)
         elif loss_name == 'reference_bone':
-            losses['ref'] = ReferenceBoneLoss(bones=simpleCocoSkeleton.bones, threshold=hparams.ref_bone_threshold)
+            losses['ref'] = ReferenceBoneLoss(bones=SimpleCOCOSkeleton.bones, threshold=hparams.ref_bone_threshold)
+        elif loss_name == 'entropy':
+            losses['ent'] = EntropyLoss()
+        elif loss_name == 'class_logit_contrastive':
+            losses['clc'] = ClassLogitContrastiveLoss()
         else:
             raise NotImplementedError
     return losses
@@ -138,6 +151,21 @@ class LitModel(pl.LightningModule):
                 # print(s_hat.squeeze().shape, s.squeeze().shape)
                 l_seg = self.losses['seg'](s_hat.permute(0, 2, 1, 3), s.squeeze(-1).long())
                 # print(l_pc, l_seg, l_rec)
+                loss = l_pc + self.hparams.w_seg * l_seg + self.hparams.w_rec * l_rec
+            elif self.hparams.mode == 'adapt':
+                y_ref = batch['ref_keypoints']
+                y_hat, y, l_rec = self.model(x)
+                l_ref = self.losses['ref'](y, y_ref)
+                l_sym = self.losses['sym'](y)
+                loss = self.hparams.w_rec * l_rec + self.hparams.w_ref * l_ref + self.hparams.w_sym * l_sym
+            else:
+                raise ValueError('mode must be train or adapt!')
+        elif self.hparams.model_name.lower() == 'p4tda2':
+            if self.hparams.mode == 'train':
+                x, s = torch.split(x, [5, 1], dim=-1)
+                y_hat, s_hat, l_rec = self.model(x)
+                l_pc = self.losses['pc'](y_hat, y)
+                l_seg = self.losses['seg'](s_hat.permute(0, 2, 1, 3), s.squeeze(-1).long())
                 loss = l_pc + self.hparams.w_seg * l_seg + self.hparams.w_rec * l_rec
             elif self.hparams.mode == 'adapt':
                 y_ref = batch['ref_keypoints']

@@ -22,7 +22,7 @@ def main(args):
         ModelCheckpoint(
             monitor='val_mpjpe',
             dirpath=os.path.join('logs', args.exp_name, args.version),
-            filename=args.model_name+'-{epoch}-{val_loss:.4f}',
+            filename=args.model_name+'-{epoch}-{val_mpjpe:.4f}',
             save_top_k=1,
             save_last=True,
             mode='min'),

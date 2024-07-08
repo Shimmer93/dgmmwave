@@ -8,6 +8,7 @@ epochs: 300
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
+data_pkl: mri.pkl
 dataset_name: temporal
 train_split: train_s1_p1
 val_split: val_s1_p1
@@ -42,13 +43,13 @@ depth: 5
 heads: 8
 dim_head: 128
 mlp_dim: 2048
-output_dim: 51
+output_dim: 39
 mem_size: 512
 features: 2
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
-loss_name: mse
+loss_names: [mse, segment]
 gamma: 0.8
 w_seg: 1.0
 w_rec: 1.0
@@ -62,10 +63,11 @@ random_jitter: true
 flip: false
 normalize: true
 random_scale: true
-random_rotate: false
+random_rotate: true
 reduce_keypoint_len: true
 pad: true
 gen_seg_gt: true
+to_simple_coco: true
 # parameters
 clip_len: 7
 outlier_type: 'box'
@@ -73,7 +75,7 @@ num_neighbors: 3
 std_multiplier: 1.0
 radius: 1.5
 min_neighbors: 2
-centroid_type: 'minball'
+centroid_type: 'none'
 num_frames: 3
 jitter_std: 0.001
 jitter_prob: 0.5
@@ -91,3 +93,4 @@ only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
 max_len: 1024
+skeleton_type: 'coco'

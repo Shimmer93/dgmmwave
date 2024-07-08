@@ -201,8 +201,8 @@ class MMBodyPreprocessor(Preprocessor):
                 pc = self._filter_pcl(kp, pc)
                 if len(pc) == 0:
                     continue
-                pcs.append(pc[:, [0, 1, 2, 4, 5]])
-                kps.append(kp)
+                pcs.append(pc[:, [0, 2, 1, 4, 5]])
+                kps.append(kp[:, [0, 2, 1]])
             self.results['sequences'].append({
                 'point_clouds': pcs,
                 'keypoints': kps,

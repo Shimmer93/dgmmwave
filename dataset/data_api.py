@@ -11,16 +11,16 @@ from dataset.transforms import TrainTransform, ValTransform
 def create_dataset(hparams, split):
     if split.startswith('train'):
         transform = TrainTransform(hparams)
-        data_pkl = hparams.train_data_pkl if hparams.train_data_pkl is not None else hparams.data_pkl
-        dataset_name = hparams.train_dataset_name if hparams.train_dataset_name is not None else hparams.dataset_name
+        data_pkl = hparams.train_data_pkl if hasattr(hparams, 'train_data_pkl') else hparams.data_pkl
+        dataset_name = hparams.train_dataset_name if hasattr(hparams, 'train_dataset_name') else hparams.dataset_name
     else:
         transform = ValTransform(hparams)
         if split.startswith('val'):
-            data_pkl = hparams.val_data_pkl if hparams.val_data_pkl is not None else hparams.data_pkl
-            dataset_name = hparams.val_dataset_name if hparams.val_dataset_name is not None else hparams.dataset_name
+            data_pkl = hparams.val_data_pkl if hasattr(hparams, 'val_data_pkl') else hparams.data_pkl
+            dataset_name = hparams.val_dataset_name if hasattr(hparams, 'val_dataset_name') else hparams.dataset_name
         else:
-            data_pkl = hparams.test_data_pkl if hparams.test_data_pkl is not None else hparams.data_pkl
-            dataset_name = hparams.test_dataset_name if hparams.test_dataset_name is not None else hparams.dataset_name
+            data_pkl = hparams.test_data_pkl if hasattr(hparams, 'test_data_pkl') else hparams.data_pkl
+            dataset_name = hparams.test_dataset_name if hasattr(hparams, 'test_dataset_name') else hparams.dataset_name
     
     if dataset_name == 'temporal':
         dataset = TemporalDataset(os.path.join(hparams.data_dir, data_pkl), transform=transform, split=split)
@@ -30,7 +30,7 @@ def create_dataset(hparams, split):
                                    transform=transform, split=split, ref_split=hparams.ref_split)
         collate_fn = ReferenceDataset.collate_fn
     else:
-        raise ValueError(f'Unknown dataset name: {hparams.dataset_name}')
+        raise ValueError(f'Unknown dataset name: {dataset_name}')
     return dataset, collate_fn
 
 class LitDataModule(pl.LightningDataModule):

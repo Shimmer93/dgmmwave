@@ -5,7 +5,7 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
 
-from misc.skeleton import coco2simplecoco, mmbody2simplecoco
+from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco
 
 def log(x):
     print(x)
@@ -159,6 +159,18 @@ class RandomRotate():
         sample['keypoints'] = sample['keypoints'] @ rot_matrix
         sample['rotation_matrix'] = rot_matrix
         return sample
+    
+class RandomTranslate():
+    def __init__(self, translate_range=0.1):
+        self.translate_range = translate_range
+
+    def __call__(self, sample):
+        translate = np.random.uniform(-self.translate_range, self.translate_range, 3)
+        for i in range(len(sample['point_clouds'])):
+            sample['point_clouds'][i][...,:3] += translate
+        sample['keypoints'] += translate
+        sample['translate'] = translate
+        return sample
 
 class RandomJitter():
     def __init__(self, jitter_std=0.01):
@@ -172,13 +184,20 @@ class RandomJitter():
 class GetCentroidRadius():
     def __init__(self, centroid_type='minball'):
         self.centroid_type = centroid_type
-        if centroid_type not in ['mean', 'minball']:
+        if centroid_type not in ['none', 'zonly', 'mean', 'minball']:
             raise ValueError('centroid_type must be "mean" or "minball"')
         
     def __call__(self, sample):
         pc_cat = np.concatenate(sample['point_clouds'], axis=0)
         pc_dedupe = np.unique(pc_cat[...,:3], axis=0)
-        if self.centroid_type == 'mean':
+        if self.centroid_type == 'none':
+            centroid = np.zeros(3)
+            radius = 1.
+        elif self.centroid_type == 'zonly':
+            centroid = np.zeros(3)
+            centroid[2] = np.median(pc_dedupe[...,2])
+            radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
+        elif self.centroid_type == 'mean':
             centroid = np.mean(pc_dedupe[...,:3], axis=0)
             radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
         elif self.centroid_type == 'minball':
@@ -230,14 +249,25 @@ class Flip():
 class ToSimpleCOCO():
     def __init__(self, skeleton_type='mmbody'):
         self.skeleton_type = skeleton_type
-        if skeleton_type not in ['mmbody', 'coco']:
-            raise ValueError('skeleton_type must be "mmbody" or "coco"')
+        if skeleton_type not in ['mmbody', 'coco', 'mmfi']:
+            raise ValueError('skeleton_type must be "mmbody", "coco" or "mmfi"')
         
     def __call__(self, sample):
         if self.skeleton_type == 'mmbody':
-            sample['keypoints'] = mmbody2simplecoco(sample['keypoints'])
+            if isinstance(sample['keypoints'], list):
+                sample['keypoints'] = [mmbody2simplecoco(kp) for kp in sample['keypoints']]
+            else:
+                sample['keypoints'] = mmbody2simplecoco(sample['keypoints'])
         elif self.skeleton_type == 'coco':
-            sample['keypoints'] = coco2simplecoco(sample['keypoints'])
+            if isinstance(sample['keypoints'], list):
+                sample['keypoints'] = [coco2simplecoco(kp) for kp in sample['keypoints']]
+            else:
+                sample['keypoints'] = coco2simplecoco(sample['keypoints'])
+        elif self.skeleton_type == 'mmfi':
+            if isinstance(sample['keypoints'], list):
+                sample['keypoints'] = [mmfi2simplecoco(kp) for kp in sample['keypoints']]
+            else:
+                sample['keypoints'] = mmfi2simplecoco(sample['keypoints'])
         else:
             raise ValueError('You should never reach here! skeleton_type must be "mmbody" or "coco"')
         return sample
@@ -302,6 +332,8 @@ class TrainTransform(ComposeTransform):
         tsfms = []
         tsfms.append(UniformSample(hparams.clip_len))
         tsfms.append(GetCentroidRadius(hparams.centroid_type))
+        if hparams.to_simple_coco:
+            tsfms.append(ToSimpleCOCO(hparams.skeleton_type))
         if hparams.multi_frame:
             tsfms.append(MultiFrameAggregate(hparams.num_frames))
         if hparams.remove_outliers:
@@ -316,14 +348,14 @@ class TrainTransform(ComposeTransform):
             tsfms.append(RandomApply([RandomScale(hparams.scale_min, hparams.scale_max)], prob=hparams.scale_prob))
         if hparams.random_rotate:
             tsfms.append(RandomApply([RandomRotate(hparams.angle_min, hparams.angle_max)], prob=hparams.rotate_prob))
+        if hparams.random_translate:
+            tsfms.append(RandomApply([RandomTranslate(hparams.translate_range)], prob=hparams.translate_prob))
         if hparams.gen_seg_gt:
             tsfms.append(GenerateSegmentationGroundTruth())
         if hparams.reduce_keypoint_len:
             tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
         if hparams.pad:
             tsfms.append(Pad(hparams.max_len))
-        if hparams.to_simple_coco:
-            tsfms.append(ToSimpleCOCO(hparams.skeleton_type))
         tsfms.append(ToTensor())
 
         super().__init__(hparams, tsfms)
@@ -333,6 +365,8 @@ class ValTransform(ComposeTransform):
         tsfms = []
         tsfms.append(UniformSample(hparams.clip_len))
         tsfms.append(GetCentroidRadius(hparams.centroid_type))
+        if hparams.to_simple_coco:
+            tsfms.append(ToSimpleCOCO(hparams.skeleton_type))
         if hparams.multi_frame:
             tsfms.append(MultiFrameAggregate(hparams.num_frames))
         if hparams.remove_outliers:
@@ -345,8 +379,6 @@ class ValTransform(ComposeTransform):
             tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
         if hparams.pad:
             tsfms.append(Pad(hparams.max_len))
-        if hparams.to_simple_coco:
-            tsfms.append(ToSimpleCOCO(hparams.skeleton_type))
         tsfms.append(ToTensor())
 
         super().__init__(hparams, tsfms)
