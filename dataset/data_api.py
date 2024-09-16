@@ -6,7 +6,7 @@ import os
 
 from dataset.temporal_dataset import TemporalDataset
 from dataset.reference_dataset import ReferenceDataset
-from dataset.transforms import TrainTransform, ValTransform
+from dataset.transforms import TrainTransform, RefTransform, ValTransform
 
 def create_dataset(hparams, split):
     if split.startswith('train'):
@@ -26,8 +26,9 @@ def create_dataset(hparams, split):
         dataset = TemporalDataset(os.path.join(hparams.data_dir, data_pkl), transform=transform, split=split)
         collate_fn = TemporalDataset.collate_fn
     elif dataset_name == 'reference':
+        ref_transform = RefTransform(hparams)
         dataset = ReferenceDataset(os.path.join(hparams.data_dir, data_pkl), os.path.join(hparams.data_dir, hparams.ref_data_pkl), 
-                                   transform=transform, split=split, ref_split=hparams.ref_split)
+                                   transform=transform, ref_transform=ref_transform, split=split, ref_split=hparams.ref_split)
         collate_fn = ReferenceDataset.collate_fn
     else:
         raise ValueError(f'Unknown dataset name: {dataset_name}')

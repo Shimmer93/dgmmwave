@@ -30,7 +30,8 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-model_name: p4t
+mode: train
+model_name: p4tda2
 radius: 0.7
 nsamples: 32
 spatial_stride: 8
@@ -43,13 +44,15 @@ heads: 8
 dim_head: 128
 mlp_dim: 2048
 output_dim: 39
-mem_size: 512
+mem_size: 128
 features: 2
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
-loss_names: [mse]
+loss_names: [mse, segment]
 gamma: 0.8
+w_seg: 1.0
+w_rec: 1.0
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -64,7 +67,7 @@ random_rotate: true
 random_translate: true
 reduce_keypoint_len: true
 pad: true
-gen_seg_gt: false
+gen_seg_gt: true
 to_simple_coco: true
 # parameters
 clip_len: 7
@@ -84,8 +87,8 @@ feat_scale: null
 scale_min: 0.9
 scale_max: 1.1
 scale_prob: 0.5
-angle_min: -3.141592653589793
-angle_max: 3.141592653589793
+angle_min: -0.3141592653589793
+angle_max: 0.3141592653589793
 rotate_prob: 0.5
 translate_range: 0.05
 translate_prob: 0.5

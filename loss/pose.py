@@ -45,18 +45,18 @@ class SymmetryLoss(nn.Module):
 
     def forward(self, ypred):
         if self.weights is None:
-            self.weights = torch.ones(ypred.shape[1], device=ypred.device)
+            self.weights = torch.ones(ypred.shape[-2], device=ypred.device)
 
         loss = 0
         for i, (l, r) in enumerate(zip(self.left_bones, self.right_bones)):
-            l_dist_sq = (ypred[..., l[0], :] - ypred[..., l[1], :]) ** 2
-            r_dist_sq = (ypred[..., r[0], :] - ypred[..., r[1], :]) ** 2
+            l_dist_sq = torch.sqrt(((ypred[..., l[0], :] - ypred[..., l[1], :]) ** 2).sum(dim=-1))
+            r_dist_sq = torch.sqrt(((ypred[..., r[0], :] - ypred[..., r[1], :]) ** 2).sum(dim=-1))
             loss += self.weights[i] * (l_dist_sq - r_dist_sq) ** 2
 
         if self.reduction == 'mean':
             return torch.mean(loss)
         if self.reduction == 'batchmean':
-            return torch.mean(torch.sum(loss, dim=loss.shape[1:]))
+            return torch.mean(loss)
         
 class ReferenceBoneLoss(nn.Module):
     def __init__(self, bones, threshold=0, weights=None, reduction='batchmean'):
@@ -68,16 +68,19 @@ class ReferenceBoneLoss(nn.Module):
         self.weights = weights
 
     def forward(self, ypred, yref):
+        # print(ypred.shape, yref.shape)
         if self.weights is None:
-            self.weights = torch.ones(ypred.shape[1], device=ypred.device)
+            self.weights = torch.ones(ypred.shape[-2], device=ypred.device)
+
+        # print(self.weights.shape)
 
         loss = 0
         for i, b in enumerate(self.bones):
-            dist_sq = (ypred[..., b[0], :] - ypred[..., b[1], :]) ** 2
-            ref_dist_sq = (yref[..., b[0], :] - yref[..., b[1], :]) ** 2
-            loss += self.weights[i] * np.max((dist_sq - ref_dist_sq) ** 2 - self.threshold ** 2, 0)
+            dist_sq = ((ypred[..., b[0], :] - ypred[..., b[1], :]) ** 2).sum(dim=-1)
+            ref_dist_sq = ((yref[..., b[0], :] - yref[..., b[1], :]) ** 2).sum(dim=-1)
+            loss += self.weights[i] * (dist_sq - ref_dist_sq) ** 2
 
         if self.reduction == 'mean':
             return torch.mean(loss)
         if self.reduction == 'batchmean':
-            return torch.mean(torch.sum(loss, dim=loss.shape[-2:]))
+            return torch.mean(loss)

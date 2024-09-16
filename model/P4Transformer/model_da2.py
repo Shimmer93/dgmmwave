@@ -39,7 +39,7 @@ class P4TransformerDA2(nn.Module):
         self.deconv = P4DTransConv(in_planes=dim, mlp_planes=[dim], mlp_activation=[True], mlp_batch_norm=[True], original_planes=features)
         self.seg_head = nn.Conv2d(in_channels=dim, out_channels=self.num_joints, kernel_size=1, stride=1, padding=0)
         self.pc_head = nn.Conv2d(in_channels=dim, out_channels=self.final_dim, kernel_size=1, stride=1, padding=0)
-        self.mem = nn.Parameter(torch.FloatTensor(1, dim, (self.num_joints) * mem_size).normal_(0.0, 1.0))
+        self.mem = nn.Parameter(torch.FloatTensor(1, self.final_dim, self.num_joints, mem_size).normal_(0.0, 1.0))
 
         self.skl_head = nn.Sequential(
             nn.LayerNorm(self.final_dim),
@@ -53,20 +53,43 @@ class P4TransformerDA2(nn.Module):
         _, _, J = s.shape
         M = self.mem_size
 
-        m = self.mem.repeat(B, 1, 1)
-        m_key = m.transpose(1, 2)
-        y_ = y.permute(0, 2, 1)
-        logits = torch.bmm(m_key, y_) / sqrt(D)
-        logits = logits.reshape(B, J, M, N).permute(0, 3, 1, 2)
-        logits = logits * s.unsqueeze(-1)
-        logits = logits.sum(dim=1)
-        y_new = torch.bmm(m_key.transpose(1, 2), F.softmax(logits, dim=1))
-        y_new_ = y_new.permute(0, 2, 1)
+        m = self.mem.repeat(B, 1, 1, 1)
+        y_new = 0
+        for i in range(J):
+            m_key = m[:, :, i, :].transpose(1, 2)
+            y_ = y.permute(0, 2, 1)
 
-        return y_new_
+            logits = torch.bmm(m_key, y_) / sqrt(D)
+            y_new_ = torch.bmm(m_key.transpose(1, 2), F.softmax(logits, dim=1))
+            y_new_ = y_new_.permute(0, 2, 1)
+            y_new += y_new_ * s[:, :, i:i+1]
+
+        return y_new
+    
+    # def forward_mem(self, y, s):
+    #     B, N, D = y.shape
+    #     _, _, J = s.shape
+    #     M = self.mem_size
+
+    #     m = self.mem.repeat(B, 1, 1)
+    #     m_key = m.transpose(1, 2)
+    #     y_ = y.permute(0, 2, 1)
+
+    #     logits = torch.bmm(m_key, y_) / sqrt(D)
+    #     logits = logits.reshape(B, J, M, N).permute(0, 2, 3, 1)
+    #     logits = logits * s.unsqueeze(1)
+    #     logits = logits.sum(dim=-1)
+    #     m_key = m_key.reshape(B, J, M, D).permute(0, 2, 1, 3).reshape(B, M, J*D)
+    #     y_new = torch.bmm(m_key.transpose(1, 2), F.softmax(logits, dim=1))
+    #     y_new = y_new.permute(0, 2, 1).reshape(B, N, J, D)
+    #     y_new = y_new * s.unsqueeze(-1)
+    #     y_new = y_new.sum(dim=2)
+
+    #     return y_new
 
     def forward(self, input, update_memory=True):                                                                                                               # [B, L, N, 3]
         device = input.get_device()
+        No = input.size(2)
         xyzs0, features0 = self.tube_embedding(input[:,:,:,:3], input[:,:,:,3:].permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
         B, L, _, N = features0.size()
@@ -98,8 +121,9 @@ class P4TransformerDA2(nn.Module):
         output_seg = self.seg_head(output_feat.transpose(1,2)).transpose(1,2) # B L J N
         J = output_seg.shape[2]
         output_seg = output_seg.permute(0, 1, 3, 2).reshape(B, -1, J) # B L*N J
-        output_seg = F.softmax(output_seg, dim=-1) 
-        output_seg_ = output_seg.reshape(B, L, N, J).permute(0, 1, 3, 2) # B L J N
+        output_seg = F.softmax(output_seg, dim=-1)
+        # print(output_seg.shape)
+        output_seg_ = output_seg.reshape(B, L, No, J).permute(0, 1, 3, 2) # B L J N
         output_pc = self.pc_head(output_feat.transpose(1,2)).transpose(1,2) # B L D N
         output_pc = output_pc.permute(0, 1, 3, 2).reshape(B, -1, self.final_dim) # B L*N D
 
@@ -108,11 +132,12 @@ class P4TransformerDA2(nn.Module):
         else:
             with torch.no_grad():
                 self.mem.requires_grad = False
-                output_rec = self.forward_mem(output)
+                output_rec = self.forward_mem(output_pc, output_seg)
                 self.mem.requires_grad = True
         loss_rec = F.mse_loss(output_rec, output_pc)
 
         output_skl = torch.max(input=output_rec, dim=1, keepdim=False, out=None)[0]
         output_skl = self.skl_head(output_skl)
+        output_skl = output_skl.reshape(output_skl.shape[0], 1, output_skl.shape[-1]//3, 3)
 
         return output_skl, output_seg_, loss_rec

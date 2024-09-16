@@ -359,6 +359,39 @@ class TrainTransform(ComposeTransform):
         tsfms.append(ToTensor())
 
         super().__init__(hparams, tsfms)
+
+class RefTransform(ComposeTransform):
+    def __init__(self, hparams):
+        tsfms = []
+        tsfms.append(UniformSample(hparams.clip_len))
+        tsfms.append(GetCentroidRadius(hparams.centroid_type))
+        if hparams.to_simple_coco:
+            tsfms.append(ToSimpleCOCO(hparams.ref_skeleton_type))
+        if hparams.multi_frame:
+            tsfms.append(MultiFrameAggregate(hparams.num_frames))
+        if hparams.remove_outliers:
+            tsfms.append(RemoveOutliers(hparams.outlier_type, hparams.num_neighbors, hparams.std_multiplier, hparams.radius, hparams.min_neighbors))
+        if hparams.random_jitter:
+            tsfms.append(RandomApply([RandomJitter(hparams.jitter_std)], prob=hparams.jitter_prob))
+        if hparams.flip:
+            tsfms.append(RandomApply([Flip(hparams.left_idxs, hparams.right_idxs)], prob=hparams.flip_prob))
+        if hparams.normalize:
+            tsfms.append(Normalize(hparams.feat_scale))
+        if hparams.random_scale:
+            tsfms.append(RandomApply([RandomScale(hparams.scale_min, hparams.scale_max)], prob=hparams.scale_prob))
+        if hparams.random_rotate:
+            tsfms.append(RandomApply([RandomRotate(hparams.angle_min, hparams.angle_max)], prob=hparams.rotate_prob))
+        if hparams.random_translate:
+            tsfms.append(RandomApply([RandomTranslate(hparams.translate_range)], prob=hparams.translate_prob))
+        if hparams.gen_seg_gt:
+            tsfms.append(GenerateSegmentationGroundTruth())
+        if hparams.reduce_keypoint_len:
+            tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
+        if hparams.pad:
+            tsfms.append(Pad(hparams.max_len))
+        tsfms.append(ToTensor())
+
+        super().__init__(hparams, tsfms)
     
 class ValTransform(ComposeTransform):
     def __init__(self, hparams):
@@ -366,7 +399,8 @@ class ValTransform(ComposeTransform):
         tsfms.append(UniformSample(hparams.clip_len))
         tsfms.append(GetCentroidRadius(hparams.centroid_type))
         if hparams.to_simple_coco:
-            tsfms.append(ToSimpleCOCO(hparams.skeleton_type))
+            skeleton_type = hparams.val_skeleton_type if hasattr(hparams, 'val_skeleton_type') else hparams.skeleton_type
+            tsfms.append(ToSimpleCOCO(skeleton_type))
         if hparams.multi_frame:
             tsfms.append(MultiFrameAggregate(hparams.num_frames))
         if hparams.remove_outliers:

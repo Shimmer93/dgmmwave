@@ -169,10 +169,16 @@ class LitModel(pl.LightningModule):
                 loss = l_pc + self.hparams.w_seg * l_seg + self.hparams.w_rec * l_rec
             elif self.hparams.mode == 'adapt':
                 y_ref = batch['ref_keypoints']
-                y_hat, y, l_rec = self.model(x)
-                l_ref = self.losses['ref'](y, y_ref)
-                l_sym = self.losses['sym'](y)
-                loss = self.hparams.w_rec * l_rec + self.hparams.w_ref * l_ref + self.hparams.w_sym * l_sym
+                y_hat, s_hat, l_rec = self.model(x, update_memory=False)
+                # l_ref = self.losses['ref'](y, y_ref)
+                # l_sym = self.losses['sym'](y)
+                # l_ent = self.losses['ent'](s_hat)
+                l_clc = self.losses['clc'](s_hat, x[..., :3])
+                # print(f'l_rec: {torch2numpy(l_rec)}')
+                # print(f'l_rec: {torch2numpy(l_rec)}, l_ent: {torch2numpy(l_ent)}, l_clc: {torch2numpy(l_clc)}')
+                # print(f'l_rec: {torch2numpy(l_rec)}, l_ref: {torch2numpy(l_ref)}, l_sym: {torch2numpy(l_sym)}, l_ent: {torch2numpy(l_ent)}, l_clc: {torch2numpy(l_clc)}')
+                # loss = self.hparams.w_rec * l_rec + self.hparams.w_ent * l_ent + self.hparams.w_clc * l_clc + self.hparams.w_ref * l_ref + self.hparams.w_sym * l_sym
+                loss = self.hparams.w_rec * l_rec + self.hparams.w_clc * l_clc # + self.hparams.w_ref * l_ref
             else:
                 raise ValueError('mode must be train or adapt!')
         else:
