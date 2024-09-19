@@ -6,7 +6,7 @@
     conda create -n mm python=3.9
     conda activate mm
     ```
-2. Install dependencies in `requirements.txt`:
+2. Install dependencies in `requirements.txt` (or `requirements_cu111.txt`):
     ```
     pip install -r requirements.txt
     ```
