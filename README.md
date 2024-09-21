@@ -10,10 +10,10 @@
     ```
     pip install -r requirements.txt
     ```
-3. Install pointnet2 for P4Transformer:
+3. On the GPU node install pointnet2 for P4Transformer (For `requirements_cu111.txt`, 7.0 should be changed to 8.0):
     ```
     cd model/P4Transformer
-    python setup.py install
+    TORCH_CUDA_ARCH_LIST=7.0 python setup.py install
     ```
 
 ## Data Download and Preprocessing
