@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from pyskl.utils.graph import Graph, get_hop_distance
 
 def get_flip_indices(num_joints, left_indices, right_indices):
     flip_indices = []
@@ -41,6 +42,7 @@ class COCOSkeleton:
     num_joints = len(joint_names)
     flip_indices = get_flip_indices(num_joints, left_indices, right_indices)
     left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
+    center = 0
             
 class SimpleCOCOSkeleton:
     joint_names = [
@@ -57,6 +59,7 @@ class SimpleCOCOSkeleton:
     num_joints = len(joint_names)
     flip_indices = get_flip_indices(num_joints, left_indices, right_indices)
     left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
+    center = 0
     
 class MMBodySkeleton:
     joint_names = [
@@ -75,6 +78,7 @@ class MMBodySkeleton:
     num_joints = len(joint_names)
     flip_indices = get_flip_indices(num_joints, left_indices, right_indices)
     left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
+    center = 0
 
 class MMFiSkeleton:
     joint_names = [
@@ -92,6 +96,7 @@ class MMFiSkeleton:
     num_joints = len(joint_names)
     flip_indices = get_flip_indices(num_joints, left_indices, right_indices)
     left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
+    center = 0
 
 def coco2simplecoco(joints):
     return joints[..., [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], :]
@@ -101,3 +106,54 @@ def mmbody2simplecoco(joints):
 
 def mmfi2simplecoco(joints):
     return joints[..., [9, 14, 11, 15, 12, 16, 13, 1, 4, 2, 5, 3, 6], :]
+
+class MMWaveGraph(Graph):
+    def __init__(self,
+                 layout='simplecoco',
+                 mode='spatial',
+                 max_hop=1,
+                 nx_node=1,
+                 num_filter=3,
+                 init_std=0.02,
+                 init_off=0.04):
+        
+        self.max_hop = max_hop
+        self.layout = layout
+        self.mode = mode
+        self.num_filter = num_filter
+        self.init_std = init_std
+        self.init_off = init_off
+        self.nx_node = nx_node
+
+        assert nx_node == 1 or mode == 'random', "nx_node can be > 1 only if mode is 'random'"
+        assert layout in ['coco', 'simplecoco', 'mmbody', 'mmfi']
+
+        self.get_layout(layout)
+        self.hop_dis = get_hop_distance(self.num_node, self.inward, max_hop)
+
+        assert hasattr(self, mode), f'Do Not Exist This Mode: {mode}'
+        self.A = getattr(self, mode)()
+
+    def get_layout(self, layout):
+        if layout == 'coco':
+            self.num_node = COCOSkeleton.num_joints
+            self.inward = COCOSkeleton.bones
+            self.center = COCOSkeleton.center
+        elif layout == 'simplecoco':
+            self.num_node = SimpleCOCOSkeleton.num_joints
+            self.inward = SimpleCOCOSkeleton.bones
+            self.center = SimpleCOCOSkeleton.center
+        elif layout == 'mmbody':
+            self.num_node = MMBodySkeleton.num_joints
+            self.inward = MMBodySkeleton.bones
+            self.center = MMBodySkeleton.center
+        elif layout == 'mmfi':
+            self.num_node = MMFiSkeleton.num_joints
+            self.inward = MMFiSkeleton.bones
+            self.center = MMFiSkeleton.center
+        else:
+            raise ValueError(f'Invalid Layout: {layout}')
+
+        self.self_link = [(i, i) for i in range(self.num_node)]
+        self.outward = [(j, i) for i, j in self.inward]
+        self.neighbor = self.inward + self.outward
