@@ -10,6 +10,9 @@
     ```
     pip install -r requirements.txt
     ```
+    ```
+    pip install -r requirements_cu111.txt
+    ```
 3. On the GPU node install pointnet2 for P4Transformer (For `requirements_cu111.txt`, 7.0 should be changed to 8.0):
     ```
     cd model/P4Transformer
