@@ -188,9 +188,12 @@ class LitModel(pl.LightningModule):
             else:
                 raise ValueError('mode must be train or adapt!')
         elif self.hparams.model_name.lower() == 'dg':
-            l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
-            print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-            loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
+            l_pos, y_hat = self.model.forward_train(x, y)
+            # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
+            loss = l_pos
+            # l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
+            # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
+            # loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
         else:
             raise NotImplementedError
         

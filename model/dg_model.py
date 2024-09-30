@@ -2,7 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from pyskl.models.gcns.ctrgcn import CTRGCNBlock
+try:
+    from pyskl.models.gcns.ctrgcn import CTRGCNBlock
+except ImportError:
+    print("Please install the package 'pyskl' to use dg_model.py.")
 from misc.skeleton import MMWaveGraph
 
 class JointAttention(nn.Module):
@@ -72,18 +75,15 @@ class DGModel(nn.Module):
         super(DGModel, self).__init__()
 
         self.pos_enc = nn.Sequential(
-            nn.Linear(3, dim),
-            nn.LayerNorm(dim),
+            nn.Linear(3, dim//2),
             nn.ReLU(),
-            nn.Linear(dim, dim)
+            nn.Linear(dim//2, dim)
         )
 
         self.feat_enc = nn.Sequential(
-            nn.Linear(num_features, dim),
-            nn.LayerNorm(dim),
+            nn.Linear(num_features, dim//2),
             nn.ReLU(),
-            nn.Linear(dim, dim),
-            nn.LayerNorm(dim)
+            nn.Linear(dim//2, dim)
         )
 
         self.point_mixer = TransformerEncoder(
@@ -93,20 +93,36 @@ class DGModel(nn.Module):
 
         self.joint_attn = JointAttention(num_joints=num_joints, dim=dim)
         self.joint_ff = nn.Sequential(
-            nn.Linear(dim, dim),
-            nn.LayerNorm(dim),
+            nn.Linear(dim, 2*dim),
+            nn.LayerNorm(2*dim),
             nn.ReLU(),
-            nn.Linear(dim, dim),
-            nn.LayerNorm(dim)
+            nn.Linear(2*dim, dim)
         )
         self.joint_gcn = CTRGCN(dict(layout=graph_layout, mode=graph_mode), base_channels=dim, num_stages=num_layers_joint)
         
         self.pos_dec = nn.Sequential(
-            nn.Linear(dim, dim),
-            nn.LayerNorm(dim),
+            nn.Linear(dim, dim//2),
             nn.ReLU(),
-            nn.Linear(dim, 3)
+            nn.Linear(dim//2, 3)
         )
+
+    def init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight)
+                nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight)
+                nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight)
+                nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm1d):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
 
     def pos_autoencode(self, coords):
         pos_embs = self.pos_enc(coords)
@@ -123,7 +139,7 @@ class DGModel(nn.Module):
         # gt_skls: [B, J, 3]
 
         B, T, N, _ = pcs.shape
-        _, J, _ = gt_skls.shape
+        _, _, J, _ = gt_skls.shape
 
         # separate coordinates and features
         coords, feats = pcs[:,:,:,:3], pcs[:,:,:,3:]
@@ -148,13 +164,14 @@ class DGModel(nn.Module):
 
         # graph convolution for joints
         x = self.joint_gcn(x)
-        x = torch.mean(x, dim=1)
-        l_pos = F.mse_loss(x, pos_embs_skl)
+        x = x[:,x.shape[1]//2:x.shape[1]//2+1,:,:]
 
-        with torch.no_grad():
-            skl = self.pos_dec(x)
+        # with torch.no_grad():
+        skl = self.pos_dec(x)
+        l_pos = F.mse_loss(skl, gt_skls)
 
-        return l_rec_pc, l_rec_skl, l_pos, skl
+        # return l_rec_pc, l_rec_skl, l_pos, skl
+        return l_pos, skl
 
 
     def forward(self, input): # [B, T, N, 3]
@@ -178,9 +195,9 @@ class DGModel(nn.Module):
 
         # graph convolution for joints
         x = self.joint_gcn(x) # [B, T, J, D]
-        x = torch.mean(x, dim=1) # [B, J, D]
+        x = x[:,x.shape[1]//2:x.shape[1]//2+1,:,:]
 
         # decode to skeleton
-        skl = self.pos_dec(x) # [B, J, 3]
+        skl = self.pos_dec(x) # [B, 1, J, 3]
 
         return skl

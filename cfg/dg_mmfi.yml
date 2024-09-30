@@ -17,7 +17,7 @@ test_split: test_rdn_p3
 # Optimizer parameters
 # --------------------------------------
 optim_name: adamw
-lr: 0.00001
+lr: 0.0001
 weight_decay: 0.00001
 momentum: 0.9
 # --------------------------------------
@@ -36,18 +36,18 @@ graph_mode: spatial
 num_features: 2
 num_joints: 13
 num_layers_point: 6
-num_layers_joint: 6
+num_layers_joint: 3
 dim: 64
 num_heads: 4
-dim_feedforward: 256
+dim_feedforward: 128
 dropout: 0.1
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
 loss_names: [mse]
 gamma: 0.8
-w_rec_pc: 1.0
-w_rec_skl: 1.0
+w_rec_pc: 0.1
+w_rec_skl: 0.1
 w_pos: 1.0
 # --------------------------------------
 # Augmentation parameters
