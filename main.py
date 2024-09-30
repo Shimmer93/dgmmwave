@@ -72,7 +72,7 @@ if __name__ == "__main__":
     print((torch.cuda.is_available()))
     print((torch.version.cuda))
     print("Hello world!")
-    print("A")
+    print("AB")
     parser = ArgumentParser()
     parser.add_argument('-c', '--cfg', type=str, default='cfg/test.yaml')
     parser.add_argument('-g', "--gpus", type=str, default=4,
