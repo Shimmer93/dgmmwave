@@ -31,6 +31,7 @@ class TemporalDataset(Dataset):
         sample['index'] = idx
         # sample = self.data[idx]
         sample = self.transform(sample)
+        # sample['point_clouds'] = sample['point_clouds'][..., :-1]
         return sample
     
     @staticmethod

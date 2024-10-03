@@ -30,7 +30,7 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-model_name: dg
+model_name: dg2
 graph_layout: simplecoco
 graph_mode: spatial
 num_features: 2
