@@ -58,16 +58,10 @@ def create_model(hparams):
         model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
                         num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
                         dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
-<<<<<<< HEAD
-    elif hparams.model_name.lower() == "poseformer":
-        #TODO: Implement PoseTransformer model
-        model = None
-=======
     elif hparams.model_name.lower() == 'dg2':
         model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
                         num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
                         dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
->>>>>>> f7df764abee06b079dc232dda70dff4a63e9962c
     else:
         raise ValueError(f'Unknown model name: {hparams.model_name}')
     
@@ -205,14 +199,6 @@ class LitModel(pl.LightningModule):
             else:
                 raise ValueError('mode must be train or adapt!')
         elif self.hparams.model_name.lower() == 'dg':
-<<<<<<< HEAD
-            l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
-            print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-            loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
-        elif self.hparams.model_name.lower() == 'debug':
-            loss = 0
-            y_hat = y.clone()
-=======
             l_pos, y_hat = self.model.forward_train(x, y)
             # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
             loss = l_pos
@@ -222,7 +208,6 @@ class LitModel(pl.LightningModule):
         elif self.hparams.model_name.lower() == 'dg2':
             l_pos, y_hat = self.model.forward_train(x, y)
             loss = l_pos
->>>>>>> f7df764abee06b079dc232dda70dff4a63e9962c
         else:
             raise NotImplementedError
         
