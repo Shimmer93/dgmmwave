@@ -4,7 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 import os
-os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
+# os.environ["TORCH_CUDA_ARCH_LIST"] = "8.0"
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 import glob

@@ -14,10 +14,12 @@ import os
 from collections import OrderedDict
 # import wandb
 # import tensorboard
-
+# try:
 from model.P4Transformer.model import P4Transformer
 from model.P4Transformer.model_da import P4TransformerDA
 from model.P4Transformer.model_da2 import P4TransformerDA2
+# except:
+#     print('error in p4t')
 from model.debug_model import DebugModel
 from model.dg_model import DGModel
 from model.metrics import calulate_error
@@ -25,6 +27,10 @@ from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
 from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
 from misc.utils import torch2numpy
 from misc.skeleton import SimpleCOCOSkeleton
+try:
+    from model.Posetransformer.common.model_poseformer import PoseTransformer
+except:
+    print("Error when importing PoseTransformer")
 
 def create_model(hparams):
     if hparams.model_name.lower() == 'p4t':
@@ -51,6 +57,9 @@ def create_model(hparams):
         model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
                         num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
                         dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
+    elif hparams.model_name.lower() == "poseformer":
+        #TODO: Implement PoseTransformer model
+        model = None
     else:
         raise ValueError(f'Unknown model name: {hparams.model_name}')
     
@@ -191,6 +200,9 @@ class LitModel(pl.LightningModule):
             l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
             print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
             loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
+        elif self.hparams.model_name.lower() == 'debug':
+            loss = 0
+            y_hat = y.clone()
         else:
             raise NotImplementedError
         
