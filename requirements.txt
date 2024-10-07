@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 --find-links=https://download.pytorch.org/whl/torch_stable.html
 setuptools==59.5.0
 numpy==1.26.4
@@ -15,11 +14,3 @@ miniball
 tensorboard
 torch-tb-profiler
 scikit-learn
-=======
-torch>=1.7
-torchvision
-pyyaml
-huggingface_hub
-safetensors>=0.2
-numpy<2.0
->>>>>>> 4d4bdd64a996bf7b5919ec62f20af4a1c07d5848
