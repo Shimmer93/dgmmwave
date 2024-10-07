@@ -127,7 +127,8 @@ class MultiFrameAggregate():
     def __call__(self, sample):
         total_frames = len(sample['point_clouds'])
         if self.num_frames <= total_frames:
-            sample['point_clouds'] = [np.concatenate(sample['point_clouds'][np.maximum(0, i-self.offset):np.minimum(i+self.offset+1, total_frames-1)]) for i in range(total_frames)]
+            sample['point_clouds'] = [np.concatenate(sample['point_clouds'][i-self.offset:i+self.offset]) for i in range(self.offset, total_frames-self.offset)]
+            # sample['point_clouds'] = [np.concatenate(sample['point_clouds'][np.maximum(0, i-self.offset):np.minimum(i+self.offset+1, total_frames-1)]) for i in range(total_frames)]
             # sample['keypoints'] = sample['keypoints'][self.offset:-self.offset]
         # print('multi frame aggregate', len(sample['point_clouds']), len(sample['keypoints']))
         return sample

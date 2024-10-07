@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-# from pyskl.utils.graph import Graph, get_hop_distance
+from pyskl.utils.graph import Graph, get_hop_distance
 
 def get_flip_indices(num_joints, left_indices, right_indices):
     flip_indices = []

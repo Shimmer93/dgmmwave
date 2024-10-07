@@ -2,7 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-from pyskl.models.gcns.ctrgcn import CTRGCNBlock
+try:
+    from pyskl.models.gcns.ctrgcn import CTRGCNBlock
+except ImportError:
+    print("Please install the package 'pyskl' to use dg_model.py.")
 from misc.skeleton import MMWaveGraph
 
 class JointAttention(nn.Module):
@@ -60,7 +63,7 @@ class CTRGCN(nn.Module):
         x = x.permute(0, 2, 3, 1) # [B, T, J, C]
         return x
 
-class DGModel(nn.Module):
+class DGModel2(nn.Module):
     def __init__(self,
                  graph_layout,
                  graph_mode='spatial',
@@ -72,7 +75,9 @@ class DGModel(nn.Module):
                  num_heads=8,
                  dim_feedforward=256,
                  dropout=0.1):
-        super(DGModel, self).__init__()
+        super(DGModel2, self).__init__()
+
+        self.aux_points = nn.Parameter(torch.randn(1, 1, 64, 3+num_features))
 
         self.pos_enc = nn.Sequential(
             nn.Linear(3, dim//4),
@@ -106,7 +111,7 @@ class DGModel(nn.Module):
             nn.Linear(dim, dim//2),
             nn.LayerNorm(dim//2),
             nn.ReLU(),
-            nn.Linear(dim//2, 3)
+            nn.Linear(dim//2, 1024+64)
         )
 
     def init_weights(self):
@@ -138,6 +143,8 @@ class DGModel(nn.Module):
         return feat_embs, rec_feats
 
     def forward_train(self, pcs, gt_skls):
+        aux_points = self.aux_points.expand(pcs.shape[0], pcs.shape[1], -1, -1)
+        pcs = torch.cat([pcs, aux_points], dim=2)
         # pcs: [B, T, N, 3+num_features]
         # gt_skls: [B, J, 3]
 
@@ -165,20 +172,24 @@ class DGModel(nn.Module):
         x = self.joint_ff(x)
         x = x.reshape(B, T, J, -1)
 
-
         # graph convolution for joints
-        x = self.joint_gcn(x)
-        x = x[:,x.shape[1]//2:x.shape[1]//2+1,:,:]
+        x = self.joint_gcn(x) # [B, T, J, D]
+        coord = coords[:,x.shape[1]//2,...]
+        x = x[:,x.shape[1]//2,...]
 
-        # with torch.no_grad():
-        skl = self.pos_dec(x)
+        # decode to skeleton
+        x = self.pos_dec(x) # [B, J, N]
+        x = F.softmax(x, dim=-1)
+        skl = torch.bmm(x, coord).unsqueeze(1) # [B, 1, J, 3]
+
         l_pos = F.mse_loss(skl, gt_skls)
 
-        # return l_rec_pc, l_rec_skl, l_pos, skl
         return l_pos, skl
 
-
     def forward(self, input): # [B, T, N, 3]
+        aux_points = self.aux_points.expand(input.shape[0], input.shape[1], -1, -1)
+        input = torch.cat([input, aux_points], dim=2)
+
         B, T, N, _ = input.shape
 
         # separate coordinates and features
@@ -200,9 +211,12 @@ class DGModel(nn.Module):
 
         # graph convolution for joints
         x = self.joint_gcn(x) # [B, T, J, D]
-        x = x[:,x.shape[1]//2:x.shape[1]//2+1,:,:]
+        coord = coords[:,x.shape[1]//2,...]
+        x = x[:,x.shape[1]//2,...]
 
         # decode to skeleton
-        skl = self.pos_dec(x) # [B, 1, J, 3]
+        x = self.pos_dec(x) # [B, J, N]
+        x = F.softmax(x, dim=-1)
+        skl = torch.bmm(x, coord).unsqueeze(1) # [B, 1, J, 3]
 
         return skl
