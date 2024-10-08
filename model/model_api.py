@@ -25,8 +25,20 @@ from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
 from misc.utils import torch2numpy
 from misc.skeleton import SimpleCOCOSkeleton
 
+from model_pt import PointTransformerV3
+
 def create_model(hparams):
-    if hparams.model_name.lower() == 'p4t':
+    # import ipdb; ipdb.set_trace()
+    if hparams.model_name.lower() == 'ptv3':
+        #model = PointTransformerV3(in_dim=hparams.in_dim, out_dim=hparams.out_dim, num_heads=hparams.num_heads, num_layers=hparams.num_layers, num_classes=hparams)
+        model = PointTransformerV3(order=("z", "z-trans","hilbert", "hilbert-trans"),
+                               enc_patch_size=(128, 128, 128, 128, 128),
+                               dec_patch_size=(128, 128, 128, 128),
+                               in_channels=5,
+                               cls_mode=False
+                               ).to('cuda')
+                                   
+    elif hparams.model_name.lower() == 'p4t':
         model = P4Transformer(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
                               emb_relu=hparams.emb_relu,
@@ -140,7 +152,29 @@ class LitModel(pl.LightningModule):
     def _calculate_loss(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
-        if self.hparams.model_name.lower() == 'p4t':
+        if self.hparams.model_name.lower() == 'ptv3':
+            coord = x[..., :3]
+            coord = coord.view(-1, 3)
+            feat = x.view(-1, 5)
+            batch_size = x.shape[0]
+            data_dict = {
+                "feat": feat,
+                "coord": coord,
+                "batch": torch.cat([torch.full((1024,), i, dtype=torch.int64) for i in range(batch_size)]).to('cuda'),
+                # "offset": torch.tensor([1024, 1024*2,1024*3,1024*4]).to('cuda'),
+                #"offset": torch.tensor([0, 512, 1024]),  # Example offsets for two batches
+                # "offset": torch.ones(1024, dtype=torch.int64),  # Batch indices set to 1
+                # "offset": torch.ones(1024, dtype=torch.int64),
+                "grid_size": 0.02,  # Grid size for indoor scenes
+                #"serialized_depth": 16,
+                # "serialized order": ("z", "z-trans","hilbert", "hilbert-trans")
+            }
+            y_hat = self.model(data_dict)
+            loss = self.losses['pc'](y_hat, y)
+
+            
+           
+        elif self.hparams.model_name.lower() == 'p4t':
             y_hat = self.model(x)
             loss = self.losses['pc'](y_hat, y)
         elif self.hparams.model_name.lower() == 'p4tda':
