@@ -4,14 +4,14 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: 150
+epochs: 50
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
 data_pkl: mmfi.pkl
 dataset_name: temporal
-train_split: train_rdn_p3
-val_split: val_rdn_p3
+train_split: val_rdn_p3
+val_split: test_rdn_p3
 test_split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
@@ -30,21 +30,25 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-model_name: p4t
-radius: 0.7
-nsamples: 32
-spatial_stride: 8
-temporal_kernel_size: 3
-temporal_stride: 1
-emb_relu: false
-dim: 1024
-depth: 5
-heads: 8
-dim_head: 128
-mlp_dim: 2048
-output_dim: 39
-mem_size: 512
-features: 2
+
+# model_name: p4t
+# radius: 0.7
+# nsamples: 32
+# spatial_stride: 8
+# temporal_kernel_size: 3
+# temporal_stride: 1
+# emb_relu: false
+# dim: 1024
+# depth: 5
+# heads: 8
+# dim_head: 128
+# mlp_dim: 2048
+# output_dim: 39
+# mem_size: 512
+# features: 2
+
+model_name: ptv3
+
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -67,7 +71,7 @@ pad: true
 gen_seg_gt: false
 to_simple_coco: true
 # parameters
-clip_len: 7
+clip_len: 3
 outlier_type: 'box'
 num_neighbors: 3
 std_multiplier: 1.0
