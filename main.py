@@ -93,6 +93,10 @@ if __name__ == "__main__":
     args = merge_args_cfg(args, cfg)
 
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
+    #加这个debug看看
+    # os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
     # please change {WANDB_API_KEY} to your personal api_key before using wandb
     # os.environ["WANDB_API_KEY"] = "60b29f8aae47df8755cbd430f0179c0cd8797bf6"
