@@ -11,8 +11,28 @@ from .point_4d_convolution import *
 from .transformer import *
 # from torchvision.models import resnet18
 
+import torch.nn.functional as F
+class JointAttention(nn.Module):
+    def __init__(self, num_joints=13, dim=64):
+        super(JointAttention, self).__init__()
+        self.num_joints = num_joints
+        self.dim = dim
+        self.joint_emb = nn.Parameter(torch.randn(1, num_joints, dim))
+        self.to_kv = nn.Linear(dim, dim*2)
 
-class P4Transformer(nn.Module):
+    def forward(self, x):
+        B, N, D = x.shape
+
+        k, v = self.to_kv(x).chunk(2, dim=-1)
+
+        joint_emb = self.joint_emb.expand(B, -1, -1) # [B, J, D]
+        attn = k @ joint_emb.transpose(1, 2) # [B, N, J]
+        attn = F.softmax(attn, dim=1) # [B, N, J]
+        x = attn.transpose(1, 2) @ v # [B, J, D]
+
+        return x
+
+class P4TransformerDA3(nn.Module):
     def __init__(self, radius, nsamples, spatial_stride,                                # P4DConv: spatial
                  temporal_kernel_size, temporal_stride,                                 # P4DConv: temporal
                  emb_relu,                                                              # embedding: relu
@@ -30,16 +50,18 @@ class P4Transformer(nn.Module):
 
         self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim)
 
+        self.joint_attn = JointAttention(num_joints=13, dim=dim)
+
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, mlp_dim),
             nn.GELU(),
-            nn.Linear(mlp_dim, output_dim),
+            nn.Linear(mlp_dim, 3),
         )
 
-    def forward(self, input):                                                                                                               # [B, L, N, 3]
+    def forward(self, input):
         device = input.get_device()
-        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,:3].clone().permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
+        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,3:].permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
         # print('xyzs: ', xyzs.max().item(), xyzs.min().item())
         # print('features: ', features.max().item(), features.min().item())
@@ -58,16 +80,23 @@ class P4Transformer(nn.Module):
         features = torch.reshape(input=features, shape=(features.shape[0], features.shape[1]*features.shape[2], features.shape[3]))         # [B, L*n, C]
         xyzts = self.pos_embedding(xyzts.permute(0, 2, 1)).permute(0, 2, 1)
 
+        # print('xyzts: ', xyzts.max().item(), xyzts.min().item())
+
         embedding = xyzts + features
 
         if self.emb_relu:
             embedding = self.emb_relu(embedding)
 
         output = self.transformer(embedding)
+
+        output = self.joint_attn(output)
+        output = self.mlp_head(output)
+        output = output.unsqueeze(1)
+        
         # print('output after transformer: ', output.max().item(), output.min().item())
 
-        output = torch.max(input=output, dim=1, keepdim=False, out=None)[0]
-        output = self.mlp_head(output)
-        output = output.reshape(output.shape[0], 1, output.shape[-1]//3, 3) # B 1 J 3
+        # output = torch.max(input=output, dim=1, keepdim=False, out=None)[0]
+        # output = self.mlp_head(output)
+        # output = output.reshape(output.shape[0], 1, output.shape[-1]//3, 3) # B 1 J 3
         # print('output after mlp_head: ', output.max().item(), output.min().item())
         return output

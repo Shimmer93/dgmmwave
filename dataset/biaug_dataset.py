@@ -5,10 +5,11 @@ import random
 import numpy as np
 from copy import deepcopy
 
-class TemporalDataset(Dataset):
+class BiAugDataset(Dataset):
     def __init__(self, data_path, transform=None, split='train'):
         self.data_path = data_path
-        self.transform = transform
+        self.transform1 = transform
+        self.transform2 = deepcopy(transform)
 
         with open(data_path, 'rb') as f:
             self.all_data = pickle.load(f)
@@ -35,14 +36,19 @@ class TemporalDataset(Dataset):
         sample['translate'] = np.array([0.,0.,0.])
         sample['rotation_matrix'] = np.eye(3)
         # sample = self.data[idx]
-        sample = self.transform(sample)
+        sample2 = deepcopy(sample)
+        sample1 = self.transform1(sample)
+        sample2 = self.transform2(sample2)
+        samples = {}
+        for key in sample1.keys():
+            samples[key] = torch.cat([sample1[key], sample2[key]], dim=0)
         # sample['point_clouds'] = sample['point_clouds'][..., :-1]
-        return sample
+        return samples
     
     @staticmethod
     def collate_fn(batch):
         batch_data = {}
-        for key in ['point_clouds', 'keypoints', 'centroid', 'radius']:
+        for key in batch[0].keys():
             batch_data[key] = torch.stack([sample[key] for sample in batch], dim=0)
 
         return batch_data

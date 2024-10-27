@@ -4,7 +4,7 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: 100
+epochs: 150
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
@@ -17,7 +17,7 @@ test_split: test_rdn_p3
 # Optimizer parameters
 # --------------------------------------
 optim_name: adamw
-lr: 0.0001
+lr: 0.00001
 weight_decay: 0.00001
 momentum: 0.9
 # --------------------------------------
@@ -30,25 +30,29 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-model_name: dg
-graph_layout: simplecoco
-graph_mode: spatial
-num_features: 2
-num_joints: 13
-num_layers_point: 3
-num_layers_joint: 6
-dim: 128
-num_heads: 8
-dim_feedforward: 256
-dropout: 0.1
+mode: train
+model_name: p4tda3
+radius: 0.7
+nsamples: 32
+spatial_stride: 8
+temporal_kernel_size: 3
+temporal_stride: 1
+emb_relu: false
+dim: 1024
+depth: 5
+heads: 8
+dim_head: 128
+mlp_dim: 2048
+output_dim: 39
+mem_size: 128
+features: 2
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
-loss_names: [mse]
+loss_names: [mse, segment]
 gamma: 0.8
-w_rec_pc: 0.1
-w_rec_skl: 0.1
-w_pos: 1.0
+w_seg: 1.0
+w_rec: 1.0
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -83,8 +87,8 @@ feat_scale: null
 scale_min: 0.9
 scale_max: 1.1
 scale_prob: 0.5
-angle_min: -3.141592653589793
-angle_max: 3.141592653589793
+angle_min: -0.3141592653589793
+angle_max: 0.3141592653589793
 rotate_prob: 0.5
 translate_range: 0.05
 translate_prob: 0.5

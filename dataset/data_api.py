@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 import os
 
 from dataset.temporal_dataset import TemporalDataset
+from dataset.biaug_dataset import BiAugDataset
 from dataset.reference_dataset import ReferenceDataset
 from dataset.transforms import TrainTransform, RefTransform, ValTransform
 
@@ -25,6 +26,9 @@ def create_dataset(hparams, split):
     if dataset_name == 'temporal':
         dataset = TemporalDataset(os.path.join(hparams.data_dir, data_pkl), transform=transform, split=split)
         collate_fn = TemporalDataset.collate_fn
+    if dataset_name == 'biaug':
+        dataset = BiAugDataset(os.path.join(hparams.data_dir, data_pkl), transform=transform, split=split)
+        collate_fn = BiAugDataset.collate_fn
     elif dataset_name == 'reference':
         ref_transform = RefTransform(hparams)
         dataset = ReferenceDataset(os.path.join(hparams.data_dir, data_pkl), os.path.join(hparams.data_dir, hparams.ref_data_pkl), 

@@ -4,14 +4,14 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: 150
+epochs: 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
 data_pkl: mmfi.pkl
 dataset_name: temporal
-train_split: train_rdn_p3
-val_split: val_rdn_p3
+train_split: val_rdn_p3
+val_split: test_rdn_p3
 test_split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
@@ -44,7 +44,7 @@ dim_head: 128
 mlp_dim: 2048
 output_dim: 39
 mem_size: 512
-features: 2
+features: 3
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -67,7 +67,7 @@ pad: true
 gen_seg_gt: false
 to_simple_coco: true
 # parameters
-clip_len: 7
+clip_len: 3
 outlier_type: 'box'
 num_neighbors: 3
 std_multiplier: 1.0

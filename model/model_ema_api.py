@@ -12,8 +12,7 @@ import matplotlib.pyplot as plt
 
 import os
 from collections import OrderedDict
-# import wandb
-# import tensorboard
+from copy import deepcopy
 
 from model.P4Transformer.model import P4Transformer
 from model.P4Transformer.model_da import P4TransformerDA
@@ -126,14 +125,35 @@ def create_scheduler(hparams, optimizer):
     else:
         raise NotImplementedError
 
-class LitModel(pl.LightningModule):
+class EMA(nn.Module):
+    """ Model Exponential Moving Average V2 from timm"""
+    def __init__(self, model, decay=0.9999):
+        super(EMA, self).__init__()
+        # make a copy of the model for accumulating moving average of weights
+        self.module = deepcopy(model)
+        self.module.eval()
+        self.decay = decay
 
+    def _update(self, model, update_fn):
+        with torch.no_grad():
+            for ema_v, model_v in zip(self.module.state_dict().values(), model.state_dict().values()):
+                ema_v.copy_(update_fn(ema_v, model_v))
+
+    def update(self, model):
+        self._update(model, update_fn=lambda e, m: self.decay * e + (1. - self.decay) * m)
+
+    def set(self, model):
+        self._update(model, update_fn=lambda e, m: m)
+    
+
+class MeanTeacherLitModel(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
         self.model = create_model(hparams)
         if hparams.checkpoint_path is not None:
             self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'])
+        self.model_ema = EMA(self.model, decay=hparams.ema_decay)
         self.losses = create_losses(hparams)
 
     def _vis_pred_gt_keypoints(self, y_hat, y, x):
@@ -232,7 +252,37 @@ class LitModel(pl.LightningModule):
                 l_pc = self.losses['pc'](y_hat, y)
                 loss = l_pc + self.hparams.w_cls * l_cls
             elif self.hparams.mode == 'adapt':
-                y_hat, l_cls = self.model.forward_train(x)
+                c = batch['centroid']
+                r = batch['radius']
+                s = batch['scale']
+                t = batch['translate']
+                rot = batch['rotation_matrix']
+                x1, x2 = torch.chunk(x, 2, dim=1)
+                # y1, y2 = torch.chunk(y, 2, dim=1)
+                c1, c2 = torch.chunk(c, 2, dim=1)
+                r1, r2 = torch.chunk(r, 2, dim=1)
+                s1, s2 = torch.chunk(s, 2, dim=1)
+                t1, t2 = torch.chunk(t, 2, dim=1)
+                rot1, rot2 = torch.chunk(rot, 2, dim=1)
+
+                y_hat = self.model.forward_adapt(x1)
+                y_pseudo = self.model_ema.module.forward_adapt(x2)
+                # print(y_hat.shape, t1.shape, rot1.shape, s1.shape, r1.shape, c1.shape)
+
+                y_hat = y_hat - t1.unsqueeze(-2).unsqueeze(-2) # centering
+                y_pseudo = y_pseudo - t2.unsqueeze(-2).unsqueeze(-2) # centering
+
+                y_hat = y_hat @ rot1.transpose(-1, -2).unsqueeze(1) # rotation
+                y_pseudo = y_pseudo @ rot2.transpose(-1, -2).unsqueeze(1) # rotation
+
+                y_hat = y_hat / s1.unsqueeze(-2).unsqueeze(-2) # scaling
+                y_pseudo = y_pseudo / s2.unsqueeze(-2).unsqueeze(-2) # scaling
+
+                y_hat = y_hat * r1.unsqueeze(-2).unsqueeze(-2) + c1.unsqueeze(-2).unsqueeze(-2) # unnormalization
+                y_pseudo = y_pseudo * r2.unsqueeze(-2).unsqueeze(-2) + c2.unsqueeze(-2).unsqueeze(-2) # unnormalization
+                
+                l_cls = self.losses['pc'](y_hat, y_pseudo.detach())
+
                 loss = l_cls
             else:
                 raise ValueError('mode must be train or adapt!')
@@ -251,6 +301,17 @@ class LitModel(pl.LightningModule):
         
         return loss, x, y, y_hat
 
+    def _calculate_loss_eval(self, batch):
+        x = batch['point_clouds']
+        y = batch['keypoints']
+        if self.hparams.model_name.lower() == 'p4tda5':
+            x, _ = torch.chunk(x, 2, dim=1)
+            y, _ = torch.chunk(y, 2, dim=1)
+            y_hat, _ = self.model.forward_train(x, y)
+        else:
+            raise NotImplementedError
+        
+        return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
         loss, x, y, y_hat = self._calculate_loss(batch)
@@ -265,42 +326,99 @@ class LitModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
+        c, _ = torch.chunk(c, 2, dim=1)
+        r, _ = torch.chunk(r, 2, dim=1)
 
-        loss, x, y, y_hat = self._calculate_loss(batch)
+        x, y, y_hat = self._calculate_loss_eval(batch)
+
+        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
+        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
 
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
-        c = torch2numpy(c)
-        r = torch2numpy(r)
-        y_hat = y_hat * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
-        y = y * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
-        self.log_dict({'val_loss': loss, 'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
+        self.log_dict({'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
         if batch_idx == 0:
             self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
-        return loss
     
     def test_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
+        c, _ = torch.chunk(c, 2, dim=1)
+        r, _ = torch.chunk(r, 2, dim=1)
 
-        loss, x, y, y_hat = self._calculate_loss(batch)
+        x, y, y_hat = self._calculate_loss_eval(batch)
+
+        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
+        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
 
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
-        c = torch2numpy(c)
-        r = torch2numpy(r)
-        y_hat = y_hat * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
-        y = y * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
-        self.log_dict({'test_loss': loss, 'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
+        self.log_dict({'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
         if batch_idx == 0:
             self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
-        return loss
+    
+    # def validation_step(self, batch, batch_idx):
+    #     c = batch['centroid']
+    #     r = batch['radius']
+
+    #     loss, x, y, y_hat = self._calculate_loss(batch)
+
+    #     y_hat = torch2numpy(y_hat)
+    #     y1, _ = torch.chunk(y, 2, dim=1)
+    #     # c1, _ = torch.chunk(c, 2, dim=1)
+    #     # r1, _ = torch.chunk(r, 2, dim=1)
+
+    #     y1 = torch2numpy(y1)
+    #     # c1 = torch2numpy(c1)
+    #     # r1 = torch2numpy(r1)
+    #     # print(y_hat.shape, y1.shape)
+    #     # y_hat = y_hat * r1[:, np.newaxis, np.newaxis, ...] + c1[:, np.newaxis, np.newaxis, ...]
+    #     # y1 = y1 * r1[:, np.newaxis, np.newaxis, ...] + c1[:, np.newaxis, np.newaxis, ...]
+    #     mpjpe, pampjpe = calulate_error(y_hat, y1)
+
+    #     self.log_dict({'val_loss': loss, 'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
+    #     if batch_idx == 0:
+    #         self._vis_pred_gt_keypoints(y_hat, y1, torch2numpy(x))
+    #     return loss
+    
+    # def test_step(self, batch, batch_idx):
+    #     c = batch['centroid']
+    #     r = batch['radius']
+
+    #     loss, x, y, y_hat = self._calculate_loss(batch)
+
+    #     y_hat = torch2numpy(y_hat)
+    #     y1, _ = torch.chunk(y, 2, dim=1)
+    #     # c1, _ = torch.chunk(c, 2, dim=1)
+    #     # r1, _ = torch.chunk(r, 2, dim=1)
+
+    #     y1 = torch2numpy(y1)
+    #     # c1 = torch2numpy(c1)
+    #     # r1 = torch2numpy(r1)
+    #     # y_hat = y_hat * r1[:, np.newaxis, np.newaxis, ...] + c1[:, np.newaxis, np.newaxis, ...]
+    #     # y1 = y1 * r1[:, np.newaxis, np.newaxis, ...] + c1[:, np.newaxis, np.newaxis, ...]
+    #     mpjpe, pampjpe = calulate_error(y_hat, y1)
+
+    #     self.log_dict({'test_loss': loss, 'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
+    #     if batch_idx == 0:
+    #         self._vis_pred_gt_keypoints(y_hat, y1, torch2numpy(x))
+    #     return loss
 
     def configure_optimizers(self):
         optimizer = create_optimizer(self.hparams, self.model.parameters())
         scheduler = create_scheduler(self.hparams, optimizer)
         return [optimizer], [scheduler]
+
+    def shared_step(self, x, y, metric):
+        y_hat = self.model(x) if self.training or self.model_ema is None else self.model_ema.module(x)
+        loss = self.criterion(y_hat, y)
+        self.log_dict(metric(y_hat, y), prog_bar=True)
+        return loss
+
+    def on_before_backward(self, loss: torch.Tensor) -> None:
+        if self.model_ema:
+            self.model_ema.update(self.model)

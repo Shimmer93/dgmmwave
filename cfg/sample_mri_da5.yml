@@ -8,16 +8,16 @@ epochs: 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
-data_pkl: mmfi.pkl
+data_pkl: mri.pkl
 dataset_name: temporal
-train_split: train_rdn_p3
-val_split: val_rdn_p3
-test_split: test_rdn_p3
+train_split: val_s1_p1
+val_split: test_s1_p1
+test_split: test_s1_p1
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
 optim_name: adamw
-lr: 0.0001
+lr: 0.00001
 weight_decay: 0.00001
 momentum: 0.9
 # --------------------------------------
@@ -30,25 +30,33 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-model_name: dg
-graph_layout: simplecoco
-graph_mode: spatial
-num_features: 2
-num_joints: 13
-num_layers_point: 3
-num_layers_joint: 6
-dim: 128
-num_heads: 8
-dim_feedforward: 256
-dropout: 0.1
+mode: train
+model_name: p4tda5
+radius: 0.7
+nsamples: 32
+spatial_stride: 8
+temporal_kernel_size: 3
+temporal_stride: 1
+emb_relu: false
+dim: 1024
+depth: 5
+heads: 8
+dim_head: 128
+mlp_dim: 2048
+output_dim: 39
+mem_size: 128
+features: 2
+dim_proposal: 64
+heads_proposal: 4
+dim_head_proposal: 16
+num_joints: 13 
+num_proposal: 64
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
 loss_names: [mse]
 gamma: 0.8
-w_rec_pc: 0.1
-w_rec_skl: 0.1
-w_pos: 1.0
+w_cls: 1.0
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -83,8 +91,8 @@ feat_scale: null
 scale_min: 0.9
 scale_max: 1.1
 scale_prob: 0.5
-angle_min: -3.141592653589793
-angle_max: 3.141592653589793
+angle_min: -0.3141592653589793
+angle_max: 0.3141592653589793
 rotate_prob: 0.5
 translate_range: 0.05
 translate_prob: 0.5
@@ -92,4 +100,4 @@ only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
 max_len: 1024
-skeleton_type: 'mmfi'
+skeleton_type: 'coco'
