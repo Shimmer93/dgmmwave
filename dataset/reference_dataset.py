@@ -31,6 +31,11 @@ class ReferenceDataset(TemporalDataset):
             ref_seq_idx += 1
         ref_sample = deepcopy(self.ref_data[ref_seq_idx])
         ref_sample['index'] = ref_idx
+        ref_sample['centroid'] = np.array([0.,0.,0.])
+        ref_sample['radius'] = 1.
+        ref_sample['scale'] = 1.
+        ref_sample['translate'] = np.array([0.,0.,0.])
+        ref_sample['rotation_matrix'] = np.eye(3)
         # sample = self.data[idx]
         ref_sample = self.ref_transform(ref_sample)
         return sample, ref_sample

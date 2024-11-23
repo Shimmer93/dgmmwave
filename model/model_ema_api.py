@@ -21,8 +21,8 @@ from model.P4Transformer.model_da3 import P4TransformerDA3
 from model.P4Transformer.model_da4 import P4TransformerDA4
 from model.P4Transformer.model_da5 import P4TransformerDA5
 from model.debug_model import DebugModel
-from model.dg_model import DGModel
-from model.dg_model2 import DGModel2
+# from model.dg_model import DGModel
+# from model.dg_model2 import DGModel2
 from model.metrics import calulate_error
 from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
 from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
@@ -69,14 +69,14 @@ def create_model(hparams):
                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
-    elif hparams.model_name.lower() == 'dg':
-        model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-                        num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-                        dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
-    elif hparams.model_name.lower() == 'dg2':
-        model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-                        num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-                        dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
+    # elif hparams.model_name.lower() == 'dg':
+    #     model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
+    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
+    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
+    # elif hparams.model_name.lower() == 'dg2':
+    #     model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
+    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
+    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
     else:
         raise ValueError(f'Unknown model name: {hparams.model_name}')
     
@@ -286,16 +286,16 @@ class MeanTeacherLitModel(pl.LightningModule):
                 loss = l_cls
             else:
                 raise ValueError('mode must be train or adapt!')
-        elif self.hparams.model_name.lower() == 'dg':
-            l_pos, y_hat = self.model.forward_train(x, y)
-            # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-            loss = l_pos
-            # l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
-            # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-            # loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
-        elif self.hparams.model_name.lower() == 'dg2':
-            l_pos, y_hat = self.model.forward_train(x, y)
-            loss = l_pos
+        # elif self.hparams.model_name.lower() == 'dg':
+        #     l_pos, y_hat = self.model.forward_train(x, y)
+        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
+        #     loss = l_pos
+        #     # l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
+        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
+        #     # loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
+        # elif self.hparams.model_name.lower() == 'dg2':
+        #     l_pos, y_hat = self.model.forward_train(x, y)
+        #     loss = l_pos
         else:
             raise NotImplementedError
         

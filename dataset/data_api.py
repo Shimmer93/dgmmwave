@@ -26,7 +26,7 @@ def create_dataset(hparams, split):
     if dataset_name == 'temporal':
         dataset = TemporalDataset(os.path.join(hparams.data_dir, data_pkl), transform=transform, split=split)
         collate_fn = TemporalDataset.collate_fn
-    if dataset_name == 'biaug':
+    elif dataset_name == 'biaug':
         dataset = BiAugDataset(os.path.join(hparams.data_dir, data_pkl), transform=transform, split=split)
         collate_fn = BiAugDataset.collate_fn
     elif dataset_name == 'reference':

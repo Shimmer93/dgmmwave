@@ -21,9 +21,10 @@ from model.P4Transformer.model_da2 import P4TransformerDA2
 from model.P4Transformer.model_da3 import P4TransformerDA3
 from model.P4Transformer.model_da4 import P4TransformerDA4
 from model.P4Transformer.model_da5 import P4TransformerDA5
+from model.P4Transformer.model_da6 import P4TransformerDA6
 from model.debug_model import DebugModel
-from model.dg_model import DGModel
-from model.dg_model2 import DGModel2
+# from model.dg_model import DGModel
+# from model.dg_model2 import DGModel2
 from model.metrics import calulate_error
 from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
 from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
@@ -68,16 +69,23 @@ def create_model(hparams):
                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
                               dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
+    elif hparams.model_name.lower() == 'p4tda6':
+        model = P4TransformerDA6(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+                              emb_relu=hparams.emb_relu,
+                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+                              dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
+                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
-    elif hparams.model_name.lower() == 'dg':
-        model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-                        num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-                        dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
-    elif hparams.model_name.lower() == 'dg2':
-        model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-                        num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-                        dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
+    # elif hparams.model_name.lower() == 'dg':
+    #     model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
+    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
+    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
+    # elif hparams.model_name.lower() == 'dg2':
+    #     model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
+    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
+    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
     else:
         raise ValueError(f'Unknown model name: {hparams.model_name}')
     
@@ -236,69 +244,91 @@ class LitModel(pl.LightningModule):
                 loss = l_cls
             else:
                 raise ValueError('mode must be train or adapt!')
-        elif self.hparams.model_name.lower() == 'dg':
-            l_pos, y_hat = self.model.forward_train(x, y)
-            # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-            loss = l_pos
-            # l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
-            # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-            # loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
-        elif self.hparams.model_name.lower() == 'dg2':
-            l_pos, y_hat = self.model.forward_train(x, y)
-            loss = l_pos
+        elif self.hparams.model_name.lower() == 'p4tda6':
+            if self.hparams.mode == 'train':
+                x_ref = batch['ref_point_clouds']
+                y_ref = batch['ref_keypoints']
+                y_hat, d, l_rec = self.model(x, mode='train')
+                _, d_ref, _ = self.model(x_ref, mode='train')
+                l_pc = self.losses['pc'](y_hat, y)
+                d0 = torch.zeros_like(d, device=d.device)
+                l_d = F.binary_cross_entropy_with_logits(d, d0)
+                d1 = torch.ones_like(d_ref, device=d_ref.device)
+                l_d_ref = F.binary_cross_entropy_with_logits(d_ref, d1)
+                loss = l_pc + self.hparams.w_rec * l_rec + self.hparams.w_d * (l_d + l_d_ref)
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec, 'l_d': l_d+l_d_ref}
+            elif self.hparams.mode == 'adapt':
+                _, d = self.model(x, mode='adapt')
+                d0 = torch.zeros_like(d, device=d.device)
+                l_d = F.binary_cross_entropy_with_logits(d, d0)
+                loss = l_d
+                losses = {'loss': loss, 'l_d': l_d}
+            else:
+                raise ValueError('mode must be train or adapt!')
+        # elif self.hparams.model_name.lower() == 'dg':
+        #     l_pos, y_hat = self.model.forward_train(x, y)
+        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
+        #     loss = l_pos
+        #     # l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
+        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
+        #     # loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
+        # elif self.hparams.model_name.lower() == 'dg2':
+        #     l_pos, y_hat = self.model.forward_train(x, y)
+        #     loss = l_pos
         else:
             raise NotImplementedError
         
-        return loss, x, y, y_hat
+        return losses, x, y, y_hat
 
 
     def training_step(self, batch, batch_idx):
-        loss, x, y, y_hat = self._calculate_loss(batch)
+        losses, x, y, y_hat = self._calculate_loss(batch)
 
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
-        self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}, sync_dist=True)
-        return loss
+        log_dict = {'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}
+        for loss_name, loss in losses.items():
+            log_dict[f'train_{loss_name}'] = loss
+
+        self.log_dict(log_dict, sync_dist=True)
+        # self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}, sync_dist=True)
+        return losses['loss']
     
     def validation_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
 
-        loss, x, y, y_hat = self._calculate_loss(batch)
+        _, x, y, y_hat = self._calculate_loss(batch)
+
+        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
+        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
 
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
-        c = torch2numpy(c)
-        r = torch2numpy(r)
-        y_hat = y_hat * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
-        y = y * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
-        self.log_dict({'val_loss': loss, 'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
+        self.log_dict({'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
         if batch_idx == 0:
             self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
-        return loss
     
     def test_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
 
-        loss, x, y, y_hat = self._calculate_loss(batch)
+        _, x, y, y_hat = self._calculate_loss(batch)
+
+        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
+        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
 
         y_hat = torch2numpy(y_hat)
         y = torch2numpy(y)
-        c = torch2numpy(c)
-        r = torch2numpy(r)
-        y_hat = y_hat * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
-        y = y * r[..., np.newaxis, np.newaxis, np.newaxis] + c[:, np.newaxis, np.newaxis, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
-        self.log_dict({'test_loss': loss, 'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
+        self.log_dict({'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
         if batch_idx == 0:
             self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
-        return loss
 
     def configure_optimizers(self):
         optimizer = create_optimizer(self.hparams, self.model.parameters())

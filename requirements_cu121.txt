@@ -1,0 +1,16 @@
+--find-links=https://download.pytorch.org/whl/cu121
+setuptools==59.5.0
+numpy==1.26.4
+Pillow==9.5.0
+torch==2.1.0
+torchvision==0.16.0
+pytorch-lightning==1.9.5
+lightning-bolts
+matplotlib
+pandas
+einops
+scipy
+miniball
+tensorboard
+torch-tb-profiler
+scikit-learn
