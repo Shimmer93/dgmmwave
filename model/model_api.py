@@ -18,15 +18,10 @@ from collections import OrderedDict
 from model.P4Transformer.model import P4Transformer
 from model.P4Transformer.model_da import P4TransformerDA
 from model.P4Transformer.model_da2 import P4TransformerDA2
-<<<<<<< HEAD
-# except:
-#     print('error in p4t')
-=======
 from model.P4Transformer.model_da3 import P4TransformerDA3
 from model.P4Transformer.model_da4 import P4TransformerDA4
 from model.P4Transformer.model_da5 import P4TransformerDA5
 from model.P4Transformer.model_da6 import P4TransformerDA6
->>>>>>> 7feb9dc02795c0de71606c59bbda53aa06c20a20
 from model.debug_model import DebugModel
 # from model.dg_model import DGModel
 # from model.dg_model2 import DGModel2
@@ -89,20 +84,6 @@ def create_model(hparams):
                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
-<<<<<<< HEAD
-    elif hparams.model_name.lower() == 'dg':
-        model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-                        num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-                        dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
-    elif hparams.model_name.lower() == 'dg2':
-        model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-                        num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-                        dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
-    elif hparams.model_name.lower() == 'ptr':
-        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
-        num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
-        
-=======
     # elif hparams.model_name.lower() == 'dg':
     #     model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
     #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
@@ -111,7 +92,10 @@ def create_model(hparams):
     #     model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
     #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
     #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
->>>>>>> 7feb9dc02795c0de71606c59bbda53aa06c20a20
+    elif hparams.model_name.lower() == 'ptr':
+        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
+        num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
+        
     else:
         raise ValueError(f'Unknown model name: {hparams.model_name}')
     
@@ -209,12 +193,7 @@ class LitModel(pl.LightningModule):
     def _calculate_loss(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
-<<<<<<< HEAD
-        # The shape of y is [5, 1, 13, 3]
-        if self.hparams.model_name.lower() == 'p4t':
-=======
         if self.hparams.model_name.lower() == 'p4t' or self.hparams.model_name.lower() == 'p4tda3':
->>>>>>> 7feb9dc02795c0de71606c59bbda53aa06c20a20
             y_hat = self.model(x)
             # print("The shape of y_hat is", y_hat.shape)
             # print("The shape of y is ", y.shape)
@@ -258,39 +237,6 @@ class LitModel(pl.LightningModule):
                 loss = self.hparams.w_rec * l_rec + self.hparams.w_clc * l_clc # + self.hparams.w_ref * l_ref
             else:
                 raise ValueError('mode must be train or adapt!')
-<<<<<<< HEAD
-        elif self.hparams.model_name.lower() == 'dg':
-            l_pos, y_hat = self.model.forward_train(x, y)
-            # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-            loss = l_pos
-            # l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
-            # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-            # loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
-        elif self.hparams.model_name.lower() == 'dg2':
-            l_pos, y_hat = self.model.forward_train(x, y)
-            loss = l_pos
-        elif self.hparams.model_name.lower() == 'ptr':
-            #TODO: Implement the loss function of posetransformer
-
-            x = x[:, :, :, :3]
-            y_hat = self.model(x)
-            y_mod = torch.clone(y)
-            y_mod[:, :, 0] = 0
-            # loss = self.losses['pc'](y_hat, y)
-            loss = mpjpe(y_hat, y_mod)
-            loss = y_mod.shape[0] * y_mod.shape[1] * loss
-            print("The original loss is", loss)
-            # The current problems:
-            # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
-            # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
-            # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
-            # # torch.cuda.empty_cache()
-            torch.cuda.empty_cache()
-        else:
-            raise NotImplementedError
-        # x input, y truth, y_hat pri
-        return loss, x, y, y_hat
-=======
         elif self.hparams.model_name.lower() == 'p4tda4':
             if self.hparams.mode == 'train':
                 y_hat, l_cls = self.model.forward_train(x)
@@ -342,11 +288,27 @@ class LitModel(pl.LightningModule):
         # elif self.hparams.model_name.lower() == 'dg2':
         #     l_pos, y_hat = self.model.forward_train(x, y)
         #     loss = l_pos
+        elif self.hparams.model_name.lower() == 'ptr':
+            #TODO: Implement the loss function of posetransformer
+
+            x = x[:, :, :, :3]
+            y_hat = self.model(x)
+            y_mod = torch.clone(y)
+            y_mod[:, :, 0] = 0
+            # loss = self.losses['pc'](y_hat, y)
+            loss = mpjpe(y_hat, y_mod)
+            loss = y_mod.shape[0] * y_mod.shape[1] * loss
+            print("The original loss is", loss)
+            # The current problems:
+            # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
+            # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
+            # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
+            # # torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
         else:
             raise NotImplementedError
-        
-        return losses, x, y, y_hat
->>>>>>> 7feb9dc02795c0de71606c59bbda53aa06c20a20
+        # x input, y truth, y_hat pri
+        return loss, x, y, y_hat
 
 
     def training_step(self, batch, batch_idx):
