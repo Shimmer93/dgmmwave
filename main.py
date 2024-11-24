@@ -10,13 +10,16 @@ from pytorch_lightning.strategies.ddp import DDPStrategy
 
 from dataset.data_api import LitDataModule
 from model.model_api import LitModel
+from model.model_ema_api import MeanTeacherLitModel
 from misc.utils import load_cfg, merge_args_cfg
 
 def main(args):
     dm = LitDataModule(hparams=args)
-    model = LitModel(hparams=args)
-    if args.only_load_model and args.checkpoint_path is not None:
-        model.load_state_dict(torch.load(args.checkpoint_path)['state_dict'])
+    if args.mean_teacher:
+        model = MeanTeacherLitModel(hparams=args)
+    else:
+        model = LitModel(hparams=args)
+        # model.load_from_checkpoint(args.checkpoint_path)
 
     callbacks = [
         ModelCheckpoint(
@@ -91,6 +94,7 @@ if __name__ == "__main__":
     parser.add_argument('--exp_name', type=str, default='fasternet')
     parser.add_argument("--version", type=str, default="0")
     parser.add_argument('--only_load_model', action='store_true')
+    parser.add_argument('--mean_teacher', action='store_true')
 
     args = parser.parse_args()
     cfg = load_cfg(args.cfg)
