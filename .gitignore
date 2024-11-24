@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 data/
 slurm-*
 wandb/
@@ -7,6 +8,8 @@ model_ckpt/
 slurm/
 logs/
 
+=======
+>>>>>>> 4d4bdd64a996bf7b5919ec62f20af4a1c07d5848
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -29,7 +32,10 @@ parts/
 sdist/
 var/
 wheels/
+<<<<<<< HEAD
 share/python-wheels/
+=======
+>>>>>>> 4d4bdd64a996bf7b5919ec62f20af4a1c07d5848
 *.egg-info/
 .installed.cfg
 *.egg
@@ -48,17 +54,25 @@ pip-delete-this-directory.txt
 # Unit test / coverage reports
 htmlcov/
 .tox/
+<<<<<<< HEAD
 .nox/
+=======
+>>>>>>> 4d4bdd64a996bf7b5919ec62f20af4a1c07d5848
 .coverage
 .coverage.*
 .cache
 nosetests.xml
 coverage.xml
 *.cover
+<<<<<<< HEAD
 *.py,cover
 .hypothesis/
 .pytest_cache/
 cover/
+=======
+.hypothesis/
+.pytest_cache/
+>>>>>>> 4d4bdd64a996bf7b5919ec62f20af4a1c07d5848
 
 # Translations
 *.mo
@@ -68,7 +82,10 @@ cover/
 *.log
 local_settings.py
 db.sqlite3
+<<<<<<< HEAD
 db.sqlite3-journal
+=======
+>>>>>>> 4d4bdd64a996bf7b5919ec62f20af4a1c07d5848
 
 # Flask stuff:
 instance/
@@ -81,12 +98,16 @@ instance/
 docs/_build/
 
 # PyBuilder
+<<<<<<< HEAD
 .pybuilder/
+=======
+>>>>>>> 4d4bdd64a996bf7b5919ec62f20af4a1c07d5848
 target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
+<<<<<<< HEAD
 # IPython
 profile_default/
 ipython_config.py
@@ -124,6 +145,13 @@ __pypackages__/
 # Celery stuff
 celerybeat-schedule
 celerybeat.pid
+=======
+# pyenv
+.python-version
+
+# celery beat schedule file
+celerybeat-schedule
+>>>>>>> 4d4bdd64a996bf7b5919ec62f20af4a1c07d5848
 
 # SageMath parsed files
 *.sage.py
@@ -144,6 +172,7 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
+<<<<<<< HEAD
 # mkdocs documentation
 /site
 
@@ -167,3 +196,27 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+=======
+# PyCharm
+.idea
+
+output/
+
+# PyTorch weights
+*.tar
+*.pth
+*.pt
+*.torch
+*.gz
+Untitled.ipynb
+Testing notebook.ipynb
+
+# Root dir exclusions
+/*.csv
+/*.yaml
+/*.json
+/*.jpg
+/*.png
+/*.zip
+/*.tar.*
+>>>>>>> 4d4bdd64a996bf7b5919ec62f20af4a1c07d5848

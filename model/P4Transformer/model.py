@@ -43,7 +43,7 @@ class P4Transformer(nn.Module):
 
         # print('xyzs: ', xyzs.max().item(), xyzs.min().item())
         # print('features: ', features.max().item(), features.min().item())
-
+        print(xyzs.shape, features.shape)
         xyzts = []
         xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)
         xyzs = [torch.squeeze(input=xyz, dim=1).contiguous() for xyz in xyzs]

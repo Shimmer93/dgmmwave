@@ -10,6 +10,9 @@
     ```
     pip install -r requirements.txt
     ```
+    ```
+    pip install -r requirements_cu111.txt
+    ```
 3. On the GPU node install pointnet2 for P4Transformer (For `requirements_cu111.txt`, 7.0 should be changed to 8.0):
     ```
     cd model/P4Transformer
@@ -27,7 +30,21 @@ To be completed
 ### Training
 ```
 python main.py -g 4 -n 1 -w 5 -b 32 -e 20 --data_dir data --exp_name mmfi -c cfg/sample_mmfi.yml --version $(date +'%Y%m%d_%H%M%S')
+
+
+
+
 ```
+
+```
+python main.py -g 4 -n 1 -w 5 -b 32 -e 20 --data_dir data --exp_name mmfi -c cfg/sample_mmfi.yml --version $(date +'%Y%m%d_%H%M%S')
+
+
+
+
+```
+
+
 ### Testing
 ```
 python main.py -g 4 -n 1 -w 5 -b 32 -e 20 --data_dir data --exp_name mmfi -c cfg/sample_mmfi.yml --version $(date +'%Y%m%d_%H%M%S') --checkpoint_path logs/mmfi/20240709_134217/p4t-epoch=145-val_mpjpe=0.1181.ckpt --test
