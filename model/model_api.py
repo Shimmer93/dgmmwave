@@ -298,7 +298,7 @@ class LitModel(pl.LightningModule):
             # loss = self.losses['pc'](y_hat, y)
             loss = mpjpe(y_hat, y_mod)
             loss = y_mod.shape[0] * y_mod.shape[1] * loss
-            # print("The original loss is", loss)
+            print("The original loss is", loss)
             # The current problems:
             # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
             # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
