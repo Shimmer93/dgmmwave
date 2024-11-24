@@ -1,0 +1,78 @@
+strategy: ddp
+benchmark: True
+pretrained: False
+sync_batchnorm: False
+clip_grad: null
+precision: 16
+epochs: 100
+# --------------------------------------
+# Dataset parameters
+# --------------------------------------
+dataset_name: temporal
+train_split: train
+val_split: val
+test_split: test
+# --------------------------------------
+# Optimizer parameters
+# --------------------------------------
+optim_name: adamw
+lr: 0.00001
+weight_decay: 0.001
+momentum: 0.9
+# --------------------------------------
+# Learning rate scheduler parameters
+# --------------------------------------
+sched_name: cosine
+warmup_lr: 0.000001
+min_lr: 0.00001
+warmup_epochs: 20
+# --------------------------------------
+# Model parameters
+# --------------------------------------
+# model_name: p4t
+# radius: 0.7
+# nsamples: 32
+# spatial_stride: 32
+# temporal_kernel_size: 3
+# temporal_stride: 1
+# emb_relu: false
+# dim: 1024
+# depth: 5
+# heads: 8
+# dim_head: 128
+# mlp_dim: 2048
+# output_dim: 18
+model_name: debug
+in_dim: 128
+out_dim: 18
+# --------------------------------------
+# Loss parameters
+# --------------------------------------
+loss_name: mse
+gamma: 0.8
+# --------------------------------------
+# Augmentation parameters
+# --------------------------------------
+# pipeline
+multi_frame: true
+random_jitter: true
+flip: true
+normalize: true
+random_scale: true
+random_rotate: true
+pad: true
+# parameters
+clip_len: 32
+num_frames: 3
+jitter_std: 0.01
+jitter_prob: 0.5
+left_idxs: [5,6,7,11,12,13,15,17]
+right_idxs: [2,3,4,8,9,10,14,16]
+flip_prob: 0.5
+scale_min: 0.8
+scale_max: 1.2
+scale_prob: 0.5
+angle_min: -0.5
+angle_max: 0.5
+rotate_prob: 0.5
+max_len: 128
