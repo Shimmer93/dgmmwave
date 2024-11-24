@@ -2,8 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
-# from pyskl.models.gcns.ctrgcn import CTRGCNBlock
-# from misc.skeleton import MMWaveGraph
+try:
+    from pyskl.models.gcns.ctrgcn import CTRGCNBlock
+except ImportError:
+    print("Please install the package 'pyskl' to use dg_model.py.")
+from misc.skeleton import MMWaveGraph
 
 class JointAttention(nn.Module):
     def __init__(self, num_joints=13, dim=64):
