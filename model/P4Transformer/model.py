@@ -39,11 +39,12 @@ class P4Transformer(nn.Module):
 
     def forward(self, input):                                                                                                               # [B, L, N, 3]
         device = input.get_device()
+        print(input.shape)
         xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,3:].permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
         # print('xyzs: ', xyzs.max().item(), xyzs.min().item())
         # print('features: ', features.max().item(), features.min().item())
-
+        print(xyzs.shape, features.shape)
         xyzts = []
         xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)
         xyzs = [torch.squeeze(input=xyz, dim=1).contiguous() for xyz in xyzs]

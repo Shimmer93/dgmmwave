@@ -83,7 +83,7 @@ class Block(nn.Module):
         return x
 
 class PoseTransformer(nn.Module):
-    def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
+    def __init__(self, num_frame=9, num_joints = 13, num_input_dims=128, in_chans=2, embed_dim_ratio=32, depth=4,
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None):
         """    ##########hybrid_backbone=None, representation_size=None,
@@ -105,12 +105,13 @@ class PoseTransformer(nn.Module):
         super().__init__()
 
         norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
-        embed_dim = embed_dim_ratio * num_joints   #### temporal embed_dim is num_joints * spatial embedding dim ratio
+        embed_dim = embed_dim_ratio * num_input_dims   #### temporal embed_dim is num_joints * spatial embedding dim ratio
         out_dim = num_joints * 3     #### output dimension is num_joints * 3
+        self.num_joints = num_joints
 
         ### spatial patch embedding
         self.Spatial_patch_to_embedding = nn.Linear(in_chans, embed_dim_ratio)
-        self.Spatial_pos_embed = nn.Parameter(torch.zeros(1, num_joints, embed_dim_ratio))
+        self.Spatial_pos_embed = nn.Parameter(torch.zeros(1, num_input_dims, embed_dim_ratio))
 
         self.Temporal_pos_embed = nn.Parameter(torch.zeros(1, num_frame, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
@@ -143,7 +144,7 @@ class PoseTransformer(nn.Module):
 
 
     def Spatial_forward_features(self, x):
-        b, _, f, p = x.shape  ##### b is batch size, f is number of frames, p is number of joints
+        b, _, f, p = x.shape  ##### b is batch size, f is number of frames, p is number of input dimensions
         x = rearrange(x, 'b c f p  -> (b f) p  c', )
 
         x = self.Spatial_patch_to_embedding(x)
@@ -174,12 +175,12 @@ class PoseTransformer(nn.Module):
     def forward(self, x):
         x = x.permute(0, 3, 1, 2)
         b, _, _, p = x.shape
-        ### now x is [batch_size, 2 channels, receptive frames, joint_num], following image data
+        ### now x is [batch_size, 2 channels, receptive frames, input_dim], following image data
         x = self.Spatial_forward_features(x)
         x = self.forward_features(x)
         x = self.head(x)
 
-        x = x.view(b, 1, p, -1)
+        x = x.view(b, 1, self.num_joints, -1)
 
         return x
 

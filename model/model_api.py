@@ -28,10 +28,12 @@ from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
 from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
 from misc.utils import torch2numpy
 from misc.skeleton import SimpleCOCOSkeleton
-try:
-    from model.Posetransformer.common.model_poseformer import PoseTransformer
-except:
-    print("Error when importing PoseTransformer")
+# try:
+from model.Posetransformer.common.model_poseformer import PoseTransformer
+from model.Posetransformer.common.loss import mpjpe
+    #model/Posetransformer/common/model_poseformer.py
+# except:
+#     print("Error when importing PoseTransformer")
 
 def create_model(hparams):
     if hparams.model_name.lower() == 'p4t':
@@ -62,6 +64,10 @@ def create_model(hparams):
         model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
                         num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
                         dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
+    elif hparams.model_name.lower() == 'ptr':
+        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
+        num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
+        
     else:
         raise ValueError(f'Unknown model name: {hparams.model_name}')
     
@@ -157,9 +163,13 @@ class LitModel(pl.LightningModule):
     def _calculate_loss(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
+        # The shape of y is [5, 1, 13, 3]
         if self.hparams.model_name.lower() == 'p4t':
             y_hat = self.model(x)
+            # print("The shape of y_hat is", y_hat.shape)
+            # print("The shape of y is ", y.shape)
             loss = self.losses['pc'](y_hat, y)
+            print("The loss is", loss)
         elif self.hparams.model_name.lower() == 'p4tda':
             if self.hparams.mode == 'train':
                 x, s = torch.split(x, [5, 1], dim=-1)
@@ -208,9 +218,26 @@ class LitModel(pl.LightningModule):
         elif self.hparams.model_name.lower() == 'dg2':
             l_pos, y_hat = self.model.forward_train(x, y)
             loss = l_pos
+        elif self.hparams.model_name.lower() == 'ptr':
+            #TODO: Implement the loss function of posetransformer
+
+            x = x[:, :, :, :3]
+            y_hat = self.model(x)
+            y_mod = torch.clone(y)
+            y_mod[:, :, 0] = 0
+            # loss = self.losses['pc'](y_hat, y)
+            loss = mpjpe(y_hat, y_mod)
+            loss = y_mod.shape[0] * y_mod.shape[1] * loss
+            print("The original loss is", loss)
+            # The current problems:
+            # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
+            # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
+            # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
+            # # torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
         else:
             raise NotImplementedError
-        
+        # x input, y truth, y_hat pri
         return loss, x, y, y_hat
 
 

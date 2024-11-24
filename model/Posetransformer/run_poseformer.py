@@ -310,6 +310,7 @@ if not args.evaluate:
             torch.cuda.empty_cache()
 
             loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
+            # inputs_3d.shape[0] * inputs_3d.shape[1] * loss_3d_pos.item() is the output
             epoch_loss_3d_train += inputs_3d.shape[0] * inputs_3d.shape[1] * loss_3d_pos.item()
             N += inputs_3d.shape[0] * inputs_3d.shape[1]
 
@@ -320,7 +321,7 @@ if not args.evaluate:
             optimizer.step()
             del inputs_3d, loss_3d_pos, predicted_3d_pos
             torch.cuda.empty_cache()
-
+        # Question: Why it need to divide by N here
         losses_3d_train.append(epoch_loss_3d_train / N)
         torch.cuda.empty_cache()
 
@@ -384,8 +385,9 @@ if not args.evaluate:
                     if batch_2d.shape[1] == 0:
                         # This can only happen when downsampling the dataset
                         continue
-
+                    #truth
                     inputs_3d = torch.from_numpy(batch.astype('float32'))
+                    #point cloud
                     inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
                     inputs_2d, inputs_3d = eval_data_prepare(receptive_field, inputs_2d, inputs_3d)
 
