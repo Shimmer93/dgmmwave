@@ -15,7 +15,7 @@ from collections import OrderedDict
 # import wandb
 # import tensorboard
 
-from model.P4Transformer.model import P4Transformer
+from model.P4Transformer.model import P4Transformer, PoseTransformer
 from model.P4Transformer.model_da import P4TransformerDA
 from model.P4Transformer.model_da2 import P4TransformerDA2
 from model.P4Transformer.model_da3 import P4TransformerDA3
@@ -28,6 +28,7 @@ from model.debug_model import DebugModel
 from model.metrics import calulate_error
 from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
 from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
+from loss.mpjpe import mpjpe as mpjpe_mmwave
 from misc.utils import torch2numpy
 from misc.skeleton import SimpleCOCOSkeleton
 
@@ -76,6 +77,9 @@ def create_model(hparams):
                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
                               dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
+    elif hparams.model_name.lower() == 'ptr':
+        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
+        num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
     # elif hparams.model_name.lower() == 'dg':
@@ -263,6 +267,22 @@ class LitModel(pl.LightningModule):
                 l_d = F.binary_cross_entropy_with_logits(d, d0)
                 loss = l_d
                 losses = {'loss': loss, 'l_d': l_d}
+            elif self.hparams.model_name.lower() == 'ptr':
+            #TODO: Implement the loss function of posetransformer
+                x = x[:, :, :, :3]
+                y_hat = self.model(x)
+                y_mod = torch.clone(y)
+                y_mod[:, :, 0] = 0
+                # loss = self.losses['pc'](y_hat, y)
+                loss = mpjpe_mmwave(y_hat, y_mod)
+                loss = y_mod.shape[0] * y_mod.shape[1] * loss
+                print("The original loss is", loss)
+                # The current problems:
+                # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
+                # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
+                # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
+                # # torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
             else:
                 raise ValueError('mode must be train or adapt!')
         # elif self.hparams.model_name.lower() == 'dg':
