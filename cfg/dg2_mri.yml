@@ -8,11 +8,11 @@ epochs: 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
-data_pkl: mmfi.pkl
+data_pkl: mri.pkl
 dataset_name: temporal
-train_split: train_rdn_p3
-val_split: val_rdn_p3
-test_split: test_rdn_p3
+train_split: train_s1_p1
+val_split: val_s1_p1
+test_split: test_s1_p1
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -30,13 +30,13 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-model_name: dg
+model_name: dg2
 graph_layout: simplecoco
 graph_mode: spatial
 num_features: 2
 num_joints: 13
-num_layers_point: 3
-num_layers_joint: 6
+num_layers_point: 6
+num_layers_joint: 3
 dim: 128
 num_heads: 8
 dim_feedforward: 256
@@ -92,4 +92,4 @@ only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
 max_len: 1024
-skeleton_type: 'mmfi'
+skeleton_type: 'coco'

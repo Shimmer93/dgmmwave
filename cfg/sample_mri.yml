@@ -4,14 +4,14 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: 300
+epochs: 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
 data_pkl: mri.pkl
 dataset_name: temporal
-train_split: train_s1_p1
-val_split: val_s1_p1
+train_split: val_s1_p1
+val_split: test_s1_p1
 test_split: test_s1_p1
 # --------------------------------------
 # Optimizer parameters
@@ -44,7 +44,7 @@ dim_head: 128
 mlp_dim: 2048
 output_dim: 39
 mem_size: 512
-features: 2
+features: 3
 # --------------------------------------
 # Loss parameters
 # --------------------------------------

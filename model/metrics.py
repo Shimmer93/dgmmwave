@@ -36,19 +36,19 @@ def compute_similarity_transform(X, Y, compute_optimal_scale=False):
 
     # optimum rotation matrix of Y
     A = np.dot(X0.T, Y0)
-    U,s,Vt = np.linalg.svd(A,full_matrices=False)
-    # try:
-    #     U,s,Vt = np.linalg.svd(A,full_matrices=False)
-    # except:
-    #     U = np.zeros_like(A)
-    #     U[0,0] = 1
-    #     U[1,1] = 1
-    #     U[2,2] = 1
-    #     Vt = np.zeros_like(A)
-    #     Vt[0,0] = 1
-    #     Vt[1,1] = 1
-    #     Vt[2,2] = 1
-    #     s = np.zeros(3)
+    # U,s,Vt = np.linalg.svd(A,full_matrices=False)
+    try:
+        U,s,Vt = np.linalg.svd(A,full_matrices=False)
+    except:
+        U = np.zeros_like(A)
+        U[0,0] = 1
+        U[1,1] = 1
+        U[2,2] = 1
+        Vt = np.zeros_like(A)
+        Vt[0,0] = 1
+        Vt[1,1] = 1
+        Vt[2,2] = 1
+        s = np.zeros(3)
 
     V = Vt.T
     T = np.dot(V, U.T)

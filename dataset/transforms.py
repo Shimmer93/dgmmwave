@@ -129,7 +129,7 @@ class MultiFrameAggregate():
         if self.num_frames <= total_frames:
             sample['point_clouds'] = [np.concatenate(sample['point_clouds'][i-self.offset:i+self.offset]) for i in range(self.offset, total_frames-self.offset)]
             # sample['point_clouds'] = [np.concatenate(sample['point_clouds'][np.maximum(0, i-self.offset):np.minimum(i+self.offset+1, total_frames-1)]) for i in range(total_frames)]
-            # sample['keypoints'] = sample['keypoints'][self.offset:-self.offset]
+            sample['keypoints'] = sample['keypoints'][self.offset:-self.offset]
         # print('multi frame aggregate', len(sample['point_clouds']), len(sample['keypoints']))
         return sample
 
@@ -280,9 +280,13 @@ class ToTensor():
         else:
             sample['point_clouds'] = torch.from_numpy(sample['point_clouds']).float()
         sample['keypoints'] = torch.from_numpy(sample['keypoints']).float()
-        # sample['action'] = torch.tensor(sample['action'])
+        sample['action'] = torch.tensor([sample['action']]).float()
+        sample['index'] = torch.tensor([sample['index']]).float()
         sample['centroid'] = torch.from_numpy(sample['centroid']).float()
-        sample['radius'] = torch.tensor(sample['radius']).float()
+        sample['radius'] = torch.tensor([sample['radius']]).float()
+        sample['scale'] = torch.tensor([sample['scale']]).float()
+        sample['translate'] = torch.from_numpy(sample['translate']).float()
+        sample['rotation_matrix'] = torch.from_numpy(sample['rotation_matrix']).float()
         return sample
 
 class ReduceKeypointLen():

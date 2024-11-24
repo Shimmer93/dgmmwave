@@ -1,5 +1,12 @@
+<<<<<<< HEAD
 from abc import ABC, abstractmethod
 # from pyskl.utils.graph import Graph, get_hop_distance
+=======
+# try:
+#     from pyskl.utils.graph import Graph, get_hop_distance
+# except ImportError:
+#     print("Please install the package 'pyskl' to use graph related functions.")
+>>>>>>> 7feb9dc02795c0de71606c59bbda53aa06c20a20
 
 def get_flip_indices(num_joints, left_indices, right_indices):
     flip_indices = []
