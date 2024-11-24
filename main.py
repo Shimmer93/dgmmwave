@@ -72,17 +72,13 @@ def main(args):
     #     wandb.finish()
 
 if __name__ == "__main__":
-    print((torch.cuda.is_available()))
-    print((torch.version.cuda))
-    print("Hello world!")
-    print("AB")
     parser = ArgumentParser()
     parser.add_argument('-c', '--cfg', type=str, default='cfg/test.yaml')
-    parser.add_argument('-g', "--gpus", type=str, default=4,
+    parser.add_argument('-g', "--gpus", type=str, default=None,
                         help="Number of GPUs to train on (int) or which GPUs to train on (list or str) applied per node.")
     parser.add_argument('-d', "--dev", type=int, default=0, help='fast_dev_run for debug')
     parser.add_argument('-n', "--num_nodes", type=int, default=1)
-    parser.add_argument('-w', "--num_workers", type=int, default=2)
+    parser.add_argument('-w', "--num_workers", type=int, default=4)
     parser.add_argument('-b', "--batch_size", type=int, default=2048)
     parser.add_argument('-e', "--batch_size_eva", type=int, default=1000, help='batch_size for evaluation')
     parser.add_argument('--clip_grad', type=float, default=1.0)
