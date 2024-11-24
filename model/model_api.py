@@ -15,7 +15,7 @@ from collections import OrderedDict
 # import wandb
 # import tensorboard
 
-from model.P4Transformer.model import P4Transformer, PoseTransformer
+from model.P4Transformer.model import P4Transformer
 from model.P4Transformer.model_da import P4TransformerDA
 from model.P4Transformer.model_da2 import P4TransformerDA2
 from model.P4Transformer.model_da3 import P4TransformerDA3
@@ -23,6 +23,7 @@ from model.P4Transformer.model_da4 import P4TransformerDA4
 from model.P4Transformer.model_da5 import P4TransformerDA5
 from model.P4Transformer.model_da6 import P4TransformerDA6
 from model.debug_model import DebugModel
+from model.model_poseformer import PoseTransformer
 # from model.dg_model import DGModel
 # from model.dg_model2 import DGModel2
 from model.metrics import calulate_error
