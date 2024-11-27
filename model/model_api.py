@@ -22,6 +22,8 @@ from model.P4Transformer.model_da3 import P4TransformerDA3
 from model.P4Transformer.model_da4 import P4TransformerDA4
 from model.P4Transformer.model_da5 import P4TransformerDA5
 from model.P4Transformer.model_da6 import P4TransformerDA6
+from model.P4Transformer.model_da7 import P4TransformerDA7
+from model.P4Transformer.model_meta import P4TransformerMeta
 from model.debug_model import DebugModel
 # from model.dg_model import DGModel
 # from model.dg_model2 import DGModel2
@@ -76,6 +78,24 @@ def create_model(hparams):
                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
                               dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
+    elif hparams.model_name.lower() == 'p4tda7':
+        model = P4TransformerDA7(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+                              emb_relu=hparams.emb_relu,
+                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features)
+    elif hparams.model_name.lower() == 'p4tmeta':
+        model = P4TransformerMeta(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+                              emb_relu=hparams.emb_relu,
+                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, 
+                              mem_size=hparams.mem_size, num_proposal=hparams.num_proposal, 
+                              enc=hparams.enc, mixer=hparams.mixer, dec=hparams.dec, pc_update=hparams.pc_update, skl_update=hparams.skl_update,
+                              dim_pc_up=hparams.dim_pc_up, depth_pc_up=hparams.depth_pc_up, heads_pc_up=hparams.heads_pc_up, dim_head_pc_up=hparams.dim_head_pc_up, mlp_dim_pc_up=hparams.mlp_dim_pc_up, mem_size_pc_up=hparams.mem_size_pc_up,
+                              dim_pc_disc=hparams.dim_pc_disc, depth_pc_disc=hparams.depth_pc_disc, heads_pc_disc=hparams.heads_pc_disc, dim_head_pc_disc=hparams.dim_head_pc_disc, mlp_dim_pc_disc=hparams.mlp_dim_pc_disc,
+                              dim_skl_up=hparams.dim_skl_up, depth_skl_up=hparams.depth_skl_up, heads_skl_up=hparams.heads_skl_up, dim_head_skl_up=hparams.dim_head_skl_up, mlp_dim_skl_up=hparams.mlp_dim_skl_up, mem_size_skl_up=hparams.mem_size_skl_up,
+                              dim_skl_disc=hparams.dim_skl_disc, depth_skl_disc=hparams.depth_skl_disc, heads_skl_disc=hparams.heads_skl_disc, dim_head_skl_disc=hparams.dim_head_skl_disc, mlp_dim_skl_disc=hparams.mlp_dim_skl_disc)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
     # elif hparams.model_name.lower() == 'dg':
@@ -186,6 +206,7 @@ class LitModel(pl.LightningModule):
         if self.hparams.model_name.lower() == 'p4t' or self.hparams.model_name.lower() == 'p4tda3':
             y_hat = self.model(x)
             loss = self.losses['pc'](y_hat, y)
+            losses = {'loss': loss}
         elif self.hparams.model_name.lower() == 'p4tda':
             if self.hparams.mode == 'train':
                 x, s = torch.split(x, [5, 1], dim=-1)
@@ -256,15 +277,91 @@ class LitModel(pl.LightningModule):
                 d1 = torch.ones_like(d_ref, device=d_ref.device)
                 l_d_ref = F.binary_cross_entropy_with_logits(d_ref, d1)
                 loss = l_pc + self.hparams.w_rec * l_rec + self.hparams.w_d * (l_d + l_d_ref)
-                losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec, 'l_d': l_d+l_d_ref}
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec, 'l_d': l_d, 'l_d_ref': l_d_ref}
             elif self.hparams.mode == 'adapt':
-                _, d = self.model(x, mode='adapt')
+                y_hat, d, l_rec = self.model(x, mode='adapt')
                 d0 = torch.zeros_like(d, device=d.device)
                 l_d = F.binary_cross_entropy_with_logits(d, d0)
-                loss = l_d
+                loss = self.hparams.w_d * l_d # + self.hparams.w_rec * l_rec
                 losses = {'loss': loss, 'l_d': l_d}
             else:
                 raise ValueError('mode must be train or adapt!')
+        elif self.hparams.model_name.lower() == 'p4tda7':
+            if self.hparams.mode == 'train':
+                x_ref = batch['ref_point_clouds']
+                y_ref = batch['ref_keypoints']
+                y_hat, d, l_rec = self.model(x, mode='train')
+                _, d_ref, _ = self.model(x_ref, mode='train')
+                l_pc = self.losses['pc'](y_hat, y)
+                d0 = torch.zeros_like(d, device=d.device)
+                l_d = F.binary_cross_entropy_with_logits(d, d0)
+                d1 = torch.ones_like(d_ref, device=d_ref.device)
+                l_d_ref = F.binary_cross_entropy_with_logits(d_ref, d1)
+                loss = l_pc + self.hparams.w_rec * l_rec + self.hparams.w_d * (l_d + l_d_ref)
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec, 'l_d': l_d, 'l_d_ref': l_d_ref}
+            elif self.hparams.mode == 'adapt':
+                y_hat, d, l_rec = self.model(x, mode='adapt')
+                d0 = torch.zeros_like(d, device=d.device)
+                l_d = F.binary_cross_entropy_with_logits(d, d0)
+                # print(f'l_d: {torch2numpy(l_d):.4f}')
+                loss = self.hparams.w_d * l_d #+ self.hparams.w_rec * l_rec
+                losses = {'loss': loss, 'l_d': l_d}
+            else:
+                raise ValueError('mode must be train or adapt!')
+        elif self.hparams.model_name.lower() == 'p4tmeta':
+            if self.hparams.mode.startswith('train'):
+                x_neg = batch['neg_point_clouds']
+                if self.hparams.mode == 'train_pc':
+                    x_hat, l_rec_pc, d_pc = self.model.forward_pc(x)
+                    x_neg_hat, l_rec_pc_neg, d_pc_neg = self.model.forward_pc(x_neg)
+                    l_up_pc = F.mse_loss(x_hat, x)
+                    l_up_pc_neg = F.mse_loss(x_neg_hat, x)
+                    d0 = torch.zeros_like(d_pc, device=d_pc.device)
+                    d1 = torch.ones_like(d_pc_neg, device=d_pc_neg.device)
+                    l_d_pc = F.binary_cross_entropy_with_logits(d_pc, d0)
+                    l_d_pc_neg = F.binary_cross_entropy_with_logits(d_pc_neg, d1)
+                    loss = (l_up_pc + l_up_pc_neg) + self.hparams.w_d * (l_d_pc + l_d_pc_neg) + self.hparams.w_rec * (l_rec_pc + l_rec_pc_neg)
+                    losses = {'loss': loss, 'l_up_pc': l_up_pc, 'l_up_pc_neg': l_up_pc_neg, 'l_d_pc': l_d_pc, 'l_d_pc_neg': l_d_pc_neg, 'l_rec_pc': l_rec_pc, 'l_rec_pc_neg': l_rec_pc_neg}
+                elif self.hparams.mode == 'train_skl':
+                    y_hat, l_rec_skl, d_skl = self.model.forward_skl(x)
+                    y_neg_hat, l_rec_skl_neg, d_skl_neg = self.model.forward_skl(x_neg)
+                    l_up_skl = F.mse_loss(y_hat, y)
+                    l_up_skl_neg = F.mse_loss(y_neg_hat, y)
+                    d0 = torch.zeros_like(d_skl, device=d_skl.device)
+                    d1 = torch.ones_like(d_skl_neg, device=d_skl_neg.device)
+                    l_d_skl = F.binary_cross_entropy_with_logits(d_skl, d0)
+                    l_d_skl_neg = F.binary_cross_entropy_with_logits(d_skl_neg, d1)
+                    loss = (l_up_skl + l_up_skl_neg) + self.hparams.w_d * (l_d_skl + l_d_skl_neg) + self.hparams.w_rec * (l_rec_skl + l_rec_skl_neg)
+                    losses = {'loss': loss, 'l_up_skl': l_up_skl, 'l_up_skl_neg': l_up_skl_neg, 'l_d_skl': l_d_skl, 'l_d_skl_neg': l_d_skl_neg, 'l_rec_skl': l_rec_skl, 'l_rec_skl_neg': l_rec_skl_neg}
+                else:
+                    y_hat, ls, ds = self.model(x, mode='train')
+                    y_neg_hat, ls_neg, ds_neg = self.model(x_neg, mode='train')
+                    l_rec_f = ls[0]
+                    d_f = ds[0]
+                    l_rec_f_neg = ls_neg[0]
+                    d_f_neg = ds_neg[0]
+                    l_main = self.losses['pc'](y_hat, y)
+                    d0 = torch.zeros_like(d_f, device=d_f.device)
+                    d1 = torch.ones_like(d_f_neg, device=d_f_neg.device)
+                    l_d_f = F.binary_cross_entropy_with_logits(d_f, d0)
+                    l_d_f_neg = F.binary_cross_entropy_with_logits(d_f_neg, d1)
+                    loss = l_main + self.hparams.w_d * (l_d_f + l_d_f_neg) + self.hparams.w_rec * (l_rec_f + l_rec_f_neg)
+                    losses = {'loss': loss, 'l_main': l_main, 'l_d_f': l_d_f, 'l_d_f_neg': l_d_f_neg, 'l_rec_f': l_rec_f, 'l_rec_f_neg': l_rec_f_neg}
+            elif self.hparams.mode == 'adapt':
+                y_hat, ls, ds = self.model(x, mode='adapt')
+                l_rec_pc, l_rec_f, l_rec_skl = ls
+                d_pc, d_f, d_skl = ds
+                d0_pc = torch.zeros_like(d_pc, device=d_pc.device)
+                d0_f = torch.zeros_like(d_f, device=d_f.device)
+                d0_skl = torch.zeros_like(d_skl, device=d_skl.device)
+                l_d_pc = F.binary_cross_entropy_with_logits(d_pc, d0_pc)
+                l_d_f = F.binary_cross_entropy_with_logits(d_f, d0_f)
+                l_d_skl = F.binary_cross_entropy_with_logits(d_skl, d0_skl)
+                loss = self.hparams.w_d * (l_d_pc + l_d_f + l_d_skl) + self.hparams.w_rec * (l_rec_pc + l_rec_f + l_rec_skl)
+                losses = {'loss': loss, 'l_d_pc': l_d_pc, 'l_d_f': l_d_f, 'l_d_skl': l_d_skl, 'l_rec_pc': l_rec_pc, 'l_rec_f': l_rec_f, 'l_rec_skl': l_rec_skl}
+            else:
+                raise ValueError('mode must be train or adapt!')
+
         # elif self.hparams.model_name.lower() == 'dg':
         #     l_pos, y_hat = self.model.forward_train(x, y)
         #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
@@ -279,7 +376,15 @@ class LitModel(pl.LightningModule):
             raise NotImplementedError
         
         return losses, x, y, y_hat
-
+    
+    def _inference(self, batch):
+        x = batch['point_clouds']
+        y = batch['keypoints']
+        if self.hparams.model_name.lower() == 'p4tmeta' and self.hparams.mode == 'train':
+            y_hat = self.model(x, mode='eval')
+        else:
+            y_hat = self.model(x)
+        return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
         losses, x, y, y_hat = self._calculate_loss(batch)
@@ -293,6 +398,9 @@ class LitModel(pl.LightningModule):
             log_dict[f'train_{loss_name}'] = loss
 
         self.log_dict(log_dict, sync_dist=True)
+
+        # if batch_idx == 0:
+        #     self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
         # self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}, sync_dist=True)
         return losses['loss']
     
@@ -300,7 +408,7 @@ class LitModel(pl.LightningModule):
         c = batch['centroid']
         r = batch['radius']
 
-        _, x, y, y_hat = self._calculate_loss(batch)
+        x, y, y_hat = self._inference(batch)
 
         y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
         y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
@@ -317,7 +425,7 @@ class LitModel(pl.LightningModule):
         c = batch['centroid']
         r = batch['radius']
 
-        _, x, y, y_hat = self._calculate_loss(batch)
+        x, y, y_hat = self._inference(batch)
 
         y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
         y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization

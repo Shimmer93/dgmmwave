@@ -7,7 +7,8 @@ import os
 from dataset.temporal_dataset import TemporalDataset
 from dataset.biaug_dataset import BiAugDataset
 from dataset.reference_dataset import ReferenceDataset
-from dataset.transforms import TrainTransform, RefTransform, ValTransform
+from dataset.posneg_dataset import PosNegDataset
+from dataset.transforms import TrainTransform, RefTransform, ValTransform, PosNegTransform
 
 def create_dataset(hparams, split):
     if split.startswith('train'):
@@ -34,6 +35,10 @@ def create_dataset(hparams, split):
         dataset = ReferenceDataset(os.path.join(hparams.data_dir, data_pkl), os.path.join(hparams.data_dir, hparams.ref_data_pkl), 
                                    transform=transform, ref_transform=ref_transform, split=split, ref_split=hparams.ref_split)
         collate_fn = ReferenceDataset.collate_fn
+    elif dataset_name == 'posneg':
+        posneg_transform = PosNegTransform(transform, hparams)
+        dataset = PosNegDataset(os.path.join(hparams.data_dir, data_pkl), transform=posneg_transform, split=split)
+        collate_fn = PosNegDataset.collate_fn
     else:
         raise ValueError(f'Unknown dataset name: {dataset_name}')
     return dataset, collate_fn
