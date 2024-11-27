@@ -25,11 +25,13 @@ from model.P4Transformer.model_da6 import P4TransformerDA6
 from model.P4Transformer.model_da7 import P4TransformerDA7
 from model.P4Transformer.model_meta import P4TransformerMeta
 from model.debug_model import DebugModel
+from model.model_poseformer import PoseTransformer
 # from model.dg_model import DGModel
 # from model.dg_model2 import DGModel2
 from model.metrics import calulate_error
 from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
 from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
+from loss.mpjpe import mpjpe as mpjpe_mmwave
 from misc.utils import torch2numpy
 from misc.skeleton import SimpleCOCOSkeleton
 
@@ -96,6 +98,9 @@ def create_model(hparams):
                               dim_pc_disc=hparams.dim_pc_disc, depth_pc_disc=hparams.depth_pc_disc, heads_pc_disc=hparams.heads_pc_disc, dim_head_pc_disc=hparams.dim_head_pc_disc, mlp_dim_pc_disc=hparams.mlp_dim_pc_disc,
                               dim_skl_up=hparams.dim_skl_up, depth_skl_up=hparams.depth_skl_up, heads_skl_up=hparams.heads_skl_up, dim_head_skl_up=hparams.dim_head_skl_up, mlp_dim_skl_up=hparams.mlp_dim_skl_up, mem_size_skl_up=hparams.mem_size_skl_up,
                               dim_skl_disc=hparams.dim_skl_disc, depth_skl_disc=hparams.depth_skl_disc, heads_skl_disc=hparams.heads_skl_disc, dim_head_skl_disc=hparams.dim_head_skl_disc, mlp_dim_skl_disc=hparams.mlp_dim_skl_disc)
+    elif hparams.model_name.lower() == 'ptr':
+        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
+        num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
     # elif hparams.model_name.lower() == 'dg':
@@ -284,6 +289,22 @@ class LitModel(pl.LightningModule):
                 l_d = F.binary_cross_entropy_with_logits(d, d0)
                 loss = self.hparams.w_d * l_d # + self.hparams.w_rec * l_rec
                 losses = {'loss': loss, 'l_d': l_d}
+            elif self.hparams.model_name.lower() == 'ptr':
+            #TODO: Implement the loss function of posetransformer
+                x = x[:, :, :, :3]
+                y_hat = self.model(x)
+                y_mod = torch.clone(y)
+                y_mod[:, :, 0] = 0
+                # loss = self.losses['pc'](y_hat, y)
+                loss = mpjpe_mmwave(y_hat, y_mod)
+                loss = y_mod.shape[0] * y_mod.shape[1] * loss
+                print("The original loss is", loss)
+                # The current problems:
+                # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
+                # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
+                # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
+                # # torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
             else:
                 raise ValueError('mode must be train or adapt!')
         elif self.hparams.model_name.lower() == 'p4tda7':
