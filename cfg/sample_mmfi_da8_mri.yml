@@ -8,11 +8,11 @@ epochs: 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
-data_pkl: mmfi.pkl
-dataset_name: posneg
-train_split: val_rdn_p3
-val_split: test_rdn_p3
-test_split: test_rdn_p3
+data_pkl: mri.pkl
+dataset_name: temporal
+train_split: val_s1_p1
+val_split: test_s1_p1
+test_split: test_s1_p1
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -30,8 +30,8 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-mode: train
-model_name: p4tmeta
+mode: inference
+model_name: p4tda8
 radius: 0.7
 nsamples: 32
 spatial_stride: 8
@@ -43,109 +43,62 @@ depth: 5
 heads: 8
 dim_head: 128
 mlp_dim: 2048
-num_joints: 13
+output_dim: 39
+mem_size: 128
 features: 2
-mem_size: 1024
+dim_proposal: 64
+heads_proposal: 4
+dim_head_proposal: 16
+num_joints: 13 
 num_proposal: 16
-enc: 'p4t'
-mixer: 'mem'
-dec: 'p4t'
-pc_update: 'mem'
-skl_update: 'mem'
-dim_pc_up: 128
-depth_pc_up: 3
-heads_pc_up: 8
-dim_head_pc_up: 16
-mlp_dim_pc_up: 256
-mem_size_pc_up: 1024
-dim_pc_disc: 128
-depth_pc_disc: 3
-heads_pc_disc: 8
-dim_head_pc_disc: 16
-mlp_dim_pc_disc: 256
-dim_skl_up: 128
-depth_skl_up: 3
-heads_skl_up: 8
-dim_head_skl_up: 16
-mlp_dim_skl_up: 256
-mem_size_skl_up: 1024
-dim_skl_disc: 128
-depth_skl_disc: 3
-heads_skl_disc: 8
-dim_head_skl_disc: 16
-mlp_dim_skl_disc: 256
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
 loss_names: [mse]
 gamma: 0.8
-w_rec: 0.01
-w_d: 0.01
+w_rec: 0.001
+w_d: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
-# uniform sample
-clip_len: 7
-# get centroid and radius
-centroid_type: 'zonly'
-# convert to simple coco format
-to_simple_coco: true
-skeleton_type: 'mmfi'
-# multi frame aggregation
+# pipeline
 multi_frame: true
-num_frames: 3
-# remove outliers
 remove_outliers: true
+random_jitter: true
+flip: false
+normalize: true
+random_scale: true
+random_rotate: true
+random_translate: true
+reduce_keypoint_len: true
+pad: true
+gen_seg_gt: false
+to_simple_coco: true
+# parameters
+clip_len: 7
 outlier_type: 'box'
 num_neighbors: 3
 std_multiplier: 1.0
 radius: 2.0
 min_neighbors: 2
-# random jitter
-random_jitter: true
+centroid_type: 'zonly'
+num_frames: 3
 jitter_std: 0.001
 jitter_prob: 0.5
-# random flip
-flip: false
 left_idxs: [5,6,7,11,12,13,15,17]
 right_idxs: [2,3,4,8,9,10,14,16]
 flip_prob: 0.5
-# normalize
-normalize: true
 feat_scale: null
-# random scale
-random_scale: true
 scale_min: 0.9
 scale_max: 1.1
 scale_prob: 0.5
-# random rotate
-random_rotate: true
 angle_min: -0.3141592653589793
 angle_max: 0.3141592653589793
 rotate_prob: 0.5
-# random translate
-random_translate: true
 translate_range: 0.05
 translate_prob: 0.5
-# generate segmentation ground truth
-gen_seg_gt: false
-# reduce keypoint length
-reduce_keypoint_len: true
 only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
-# pad point cloud
-pad: true
 max_len: 256
-# --------------------------------------
-# Augmentation parameters for Negative samples
-# --------------------------------------
-# random jitter with larger std
-jitter_std_neg: 0.1
-# drop points around a random point
-drop_radius: 0.1
-drop_prob: 0.5
-# add points around a random point
-add_radius: 0.1
-num_add_points: 10
-add_prob: 0.5
+skeleton_type: 'coco'

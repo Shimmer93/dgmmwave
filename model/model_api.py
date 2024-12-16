@@ -23,7 +23,7 @@ from model.P4Transformer.model_da4 import P4TransformerDA4
 from model.P4Transformer.model_da5 import P4TransformerDA5
 from model.P4Transformer.model_da6 import P4TransformerDA6
 from model.P4Transformer.model_da7 import P4TransformerDA7
-from model.P4Transformer.model_meta import P4TransformerMeta
+from model.P4Transformer.model_da8 import P4TransformerDA8
 from model.debug_model import DebugModel
 from model.model_poseformer import PoseTransformer
 # from model.dg_model import DGModel
@@ -86,6 +86,13 @@ def create_model(hparams):
                               emb_relu=hparams.emb_relu,
                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features)
+    elif hparams.model_name.lower() == 'p4tda8':
+        model = P4TransformerDA8(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+                              emb_relu=hparams.emb_relu,
+                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+                              dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
+                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
     elif hparams.model_name.lower() == 'p4tmeta':
         model = P4TransformerMeta(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
@@ -166,7 +173,7 @@ class LitModel(pl.LightningModule):
         self.save_hyperparameters(hparams)
         self.model = create_model(hparams)
         if hparams.checkpoint_path is not None:
-            self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'])
+            self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'], strict=False)
         self.losses = create_losses(hparams)
 
     def _vis_pred_gt_keypoints(self, y_hat, y, x):
@@ -281,30 +288,14 @@ class LitModel(pl.LightningModule):
                 l_d = F.binary_cross_entropy_with_logits(d, d0)
                 d1 = torch.ones_like(d_ref, device=d_ref.device)
                 l_d_ref = F.binary_cross_entropy_with_logits(d_ref, d1)
-                loss = l_pc + self.hparams.w_rec * l_rec + self.hparams.w_d * (l_d + l_d_ref)
-                losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec, 'l_d': l_d, 'l_d_ref': l_d_ref}
+                loss = l_pc + self.hparams.w_d * (l_d + l_d_ref)
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_d': l_d, 'l_d_ref': l_d_ref}
             elif self.hparams.mode == 'adapt':
                 y_hat, d, l_rec = self.model(x, mode='adapt')
                 d0 = torch.zeros_like(d, device=d.device)
                 l_d = F.binary_cross_entropy_with_logits(d, d0)
                 loss = self.hparams.w_d * l_d # + self.hparams.w_rec * l_rec
                 losses = {'loss': loss, 'l_d': l_d}
-            elif self.hparams.model_name.lower() == 'ptr':
-            #TODO: Implement the loss function of posetransformer
-                x = x[:, :, :, :3]
-                y_hat = self.model(x)
-                y_mod = torch.clone(y)
-                y_mod[:, :, 0] = 0
-                # loss = self.losses['pc'](y_hat, y)
-                loss = mpjpe_mmwave(y_hat, y_mod)
-                loss = y_mod.shape[0] * y_mod.shape[1] * loss
-                print("The original loss is", loss)
-                # The current problems:
-                # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
-                # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
-                # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
-                # # torch.cuda.empty_cache()
-                torch.cuda.empty_cache()
             else:
                 raise ValueError('mode must be train or adapt!')
         elif self.hparams.model_name.lower() == 'p4tda7':
@@ -329,70 +320,34 @@ class LitModel(pl.LightningModule):
                 losses = {'loss': loss, 'l_d': l_d}
             else:
                 raise ValueError('mode must be train or adapt!')
-        elif self.hparams.model_name.lower() == 'p4tmeta':
-            if self.hparams.mode.startswith('train'):
-                x_neg = batch['neg_point_clouds']
-                if self.hparams.mode == 'train_pc':
-                    x_hat, l_rec_pc, d_pc = self.model.forward_pc(x)
-                    x_neg_hat, l_rec_pc_neg, d_pc_neg = self.model.forward_pc(x_neg)
-                    l_up_pc = F.mse_loss(x_hat, x)
-                    l_up_pc_neg = F.mse_loss(x_neg_hat, x)
-                    d0 = torch.zeros_like(d_pc, device=d_pc.device)
-                    d1 = torch.ones_like(d_pc_neg, device=d_pc_neg.device)
-                    l_d_pc = F.binary_cross_entropy_with_logits(d_pc, d0)
-                    l_d_pc_neg = F.binary_cross_entropy_with_logits(d_pc_neg, d1)
-                    loss = (l_up_pc + l_up_pc_neg) + self.hparams.w_d * (l_d_pc + l_d_pc_neg) + self.hparams.w_rec * (l_rec_pc + l_rec_pc_neg)
-                    losses = {'loss': loss, 'l_up_pc': l_up_pc, 'l_up_pc_neg': l_up_pc_neg, 'l_d_pc': l_d_pc, 'l_d_pc_neg': l_d_pc_neg, 'l_rec_pc': l_rec_pc, 'l_rec_pc_neg': l_rec_pc_neg}
-                elif self.hparams.mode == 'train_skl':
-                    y_hat, l_rec_skl, d_skl = self.model.forward_skl(x)
-                    y_neg_hat, l_rec_skl_neg, d_skl_neg = self.model.forward_skl(x_neg)
-                    l_up_skl = F.mse_loss(y_hat, y)
-                    l_up_skl_neg = F.mse_loss(y_neg_hat, y)
-                    d0 = torch.zeros_like(d_skl, device=d_skl.device)
-                    d1 = torch.ones_like(d_skl_neg, device=d_skl_neg.device)
-                    l_d_skl = F.binary_cross_entropy_with_logits(d_skl, d0)
-                    l_d_skl_neg = F.binary_cross_entropy_with_logits(d_skl_neg, d1)
-                    loss = (l_up_skl + l_up_skl_neg) + self.hparams.w_d * (l_d_skl + l_d_skl_neg) + self.hparams.w_rec * (l_rec_skl + l_rec_skl_neg)
-                    losses = {'loss': loss, 'l_up_skl': l_up_skl, 'l_up_skl_neg': l_up_skl_neg, 'l_d_skl': l_d_skl, 'l_d_skl_neg': l_d_skl_neg, 'l_rec_skl': l_rec_skl, 'l_rec_skl_neg': l_rec_skl_neg}
-                else:
-                    y_hat, ls, ds = self.model(x, mode='train')
-                    y_neg_hat, ls_neg, ds_neg = self.model(x_neg, mode='train')
-                    l_rec_f = ls[0]
-                    d_f = ds[0]
-                    l_rec_f_neg = ls_neg[0]
-                    d_f_neg = ds_neg[0]
-                    l_main = self.losses['pc'](y_hat, y)
-                    d0 = torch.zeros_like(d_f, device=d_f.device)
-                    d1 = torch.ones_like(d_f_neg, device=d_f_neg.device)
-                    l_d_f = F.binary_cross_entropy_with_logits(d_f, d0)
-                    l_d_f_neg = F.binary_cross_entropy_with_logits(d_f_neg, d1)
-                    loss = l_main + self.hparams.w_d * (l_d_f + l_d_f_neg) + self.hparams.w_rec * (l_rec_f + l_rec_f_neg)
-                    losses = {'loss': loss, 'l_main': l_main, 'l_d_f': l_d_f, 'l_d_f_neg': l_d_f_neg, 'l_rec_f': l_rec_f, 'l_rec_f_neg': l_rec_f_neg}
-            elif self.hparams.mode == 'adapt':
-                y_hat, ls, ds = self.model(x, mode='adapt')
-                l_rec_pc, l_rec_f, l_rec_skl = ls
-                d_pc, d_f, d_skl = ds
-                d0_pc = torch.zeros_like(d_pc, device=d_pc.device)
-                d0_f = torch.zeros_like(d_f, device=d_f.device)
-                d0_skl = torch.zeros_like(d_skl, device=d_skl.device)
-                l_d_pc = F.binary_cross_entropy_with_logits(d_pc, d0_pc)
-                l_d_f = F.binary_cross_entropy_with_logits(d_f, d0_f)
-                l_d_skl = F.binary_cross_entropy_with_logits(d_skl, d0_skl)
-                loss = self.hparams.w_d * (l_d_pc + l_d_f + l_d_skl) + self.hparams.w_rec * (l_rec_pc + l_rec_f + l_rec_skl)
-                losses = {'loss': loss, 'l_d_pc': l_d_pc, 'l_d_f': l_d_f, 'l_d_skl': l_d_skl, 'l_rec_pc': l_rec_pc, 'l_rec_f': l_rec_f, 'l_rec_skl': l_rec_skl}
+        elif self.hparams.model_name.lower() == 'p4tda8':
+            if self.hparams.mode == 'train':
+                x_ref = batch['ref_point_clouds']
+                y_hat, y_hat_ref, y_hat2, y_hat_ref2, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
+                l_pc = self.losses['pc'](y_hat, y)
+                l_pc2 = self.losses['pc'](y_hat2, y.clone())
+                # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
+                # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
+                loss = l_pc + l_pc2 + self.hparams.w_rec * (l_rec + l_rec_ref) + self.hparams.w_mem * l_mem # + w_con * l_con
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
             else:
-                raise ValueError('mode must be train or adapt!')
-
-        # elif self.hparams.model_name.lower() == 'dg':
-        #     l_pos, y_hat = self.model.forward_train(x, y)
-        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-        #     loss = l_pos
-        #     # l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
-        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-        #     # loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
-        # elif self.hparams.model_name.lower() == 'dg2':
-        #     l_pos, y_hat = self.model.forward_train(x, y)
-        #     loss = l_pos
+                raise ValueError('mode must be train!')
+        elif self.hparams.model_name.lower() == 'ptr':
+            #TODO: Implement the loss function of posetransformer
+            x = x[:, :, :, :3]
+            y_hat = self.model(x)
+            y_mod = torch.clone(y)
+            y_mod[:, :, 0] = 0
+            # loss = self.losses['pc'](y_hat, y)
+            loss = mpjpe_mmwave(y_hat, y_mod)
+            loss = y_mod.shape[0] * y_mod.shape[1] * loss
+            print("The original loss is", loss)
+            # The current problems:
+            # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
+            # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
+            # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
+            # # torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
         else:
             raise NotImplementedError
         
@@ -401,20 +356,20 @@ class LitModel(pl.LightningModule):
     def _inference(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
-        if self.hparams.model_name.lower() == 'p4tmeta' and self.hparams.mode == 'train':
-            y_hat = self.model(x, mode='eval')
-        else:
-            y_hat = self.model(x)
+        y_hat = self.model(x)
         return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
         losses, x, y, y_hat = self._calculate_loss(batch)
 
-        y_hat = torch2numpy(y_hat)
-        y = torch2numpy(y)
-        mpjpe, pampjpe = calulate_error(y_hat, y)
+        if y_hat is None:
+            log_dict = {}
+        else:
+            y_hat = torch2numpy(y_hat)
+            y = torch2numpy(y)
+            mpjpe, pampjpe = calulate_error(y_hat, y)
+            log_dict = {'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}
 
-        log_dict = {'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}
         for loss_name, loss in losses.items():
             log_dict[f'train_{loss_name}'] = loss
 
