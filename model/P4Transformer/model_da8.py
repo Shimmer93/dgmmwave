@@ -216,7 +216,7 @@ class P4TransformerDA8(nn.Module):
         l_rec_s = F.mse_loss(mem_s, output0_s)
         output_s = self.model_s.decode(mem_s)
 
-        embedding_t = self.model_t.encode(input_t)
+        embedding_t = self.model_s.encode(input_t)
         output0_t = self.model_t.transformer(embedding_t)
         output0_t2 = output0_t.clone()
         output_t = self.model_t.mem(output0_t) # [B, L*n, C]
