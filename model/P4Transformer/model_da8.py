@@ -200,8 +200,8 @@ class P4TransformerDA8(nn.Module):
     def forward_inference(self, input):
         embedding = self.model_s.encode(input)
         output0 = self.model_s.transformer(embedding)
-        output = self.model_s.mem(output0) # [B, L*n, C]
-        output = self.model_s.decode(output)
+        output = self.model_t.mem(output0) # [B, L*n, C]
+        output = self.model_t.decode(output)
         return output
         
     def forward_train(self, input):

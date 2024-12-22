@@ -39,7 +39,7 @@ class P4Transformer(nn.Module):
 
     def forward(self, input):                                                                                                               # [B, L, N, 3]
         device = input.get_device()
-        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,:3].clone().permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
+        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,3:].permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
         # print('xyzs: ', xyzs.max().item(), xyzs.min().item())
         # print('features: ', features.max().item(), features.min().item())

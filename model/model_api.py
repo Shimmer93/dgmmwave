@@ -9,6 +9,7 @@ import torch.optim.lr_scheduler as sched
 import pytorch_lightning as pl
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import matplotlib.pyplot as plt
+import pickle
 
 import os
 from collections import OrderedDict
@@ -93,31 +94,11 @@ def create_model(hparams):
                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
                               dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
-    elif hparams.model_name.lower() == 'p4tmeta':
-        model = P4TransformerMeta(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, 
-                              mem_size=hparams.mem_size, num_proposal=hparams.num_proposal, 
-                              enc=hparams.enc, mixer=hparams.mixer, dec=hparams.dec, pc_update=hparams.pc_update, skl_update=hparams.skl_update,
-                              dim_pc_up=hparams.dim_pc_up, depth_pc_up=hparams.depth_pc_up, heads_pc_up=hparams.heads_pc_up, dim_head_pc_up=hparams.dim_head_pc_up, mlp_dim_pc_up=hparams.mlp_dim_pc_up, mem_size_pc_up=hparams.mem_size_pc_up,
-                              dim_pc_disc=hparams.dim_pc_disc, depth_pc_disc=hparams.depth_pc_disc, heads_pc_disc=hparams.heads_pc_disc, dim_head_pc_disc=hparams.dim_head_pc_disc, mlp_dim_pc_disc=hparams.mlp_dim_pc_disc,
-                              dim_skl_up=hparams.dim_skl_up, depth_skl_up=hparams.depth_skl_up, heads_skl_up=hparams.heads_skl_up, dim_head_skl_up=hparams.dim_head_skl_up, mlp_dim_skl_up=hparams.mlp_dim_skl_up, mem_size_skl_up=hparams.mem_size_skl_up,
-                              dim_skl_disc=hparams.dim_skl_disc, depth_skl_disc=hparams.depth_skl_disc, heads_skl_disc=hparams.heads_skl_disc, dim_head_skl_disc=hparams.dim_head_skl_disc, mlp_dim_skl_disc=hparams.mlp_dim_skl_disc)
     elif hparams.model_name.lower() == 'ptr':
         model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
         num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
-    # elif hparams.model_name.lower() == 'dg':
-    #     model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
-    # elif hparams.model_name.lower() == 'dg2':
-    #     model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
     else:
         raise ValueError(f'Unknown model name: {hparams.model_name}')
     
@@ -176,7 +157,23 @@ class LitModel(pl.LightningModule):
             self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'], strict=False)
         self.losses = create_losses(hparams)
 
-    def _vis_pred_gt_keypoints(self, y_hat, y, x):
+    def _recover_point_cloud(self, x, center, radius):
+        x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        x = torch2numpy(x)
+        return x
+    
+    def _recover_skeleton(self, y, center, radius):
+        y = y * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        y = torch2numpy(y)
+        return y
+
+    def _recover_data(self, x, y, y_hat, center, radius):
+        x = self._recover_point_cloud(x, center, radius)
+        y = self._recover_skeleton(y, center, radius)
+        y_hat = self._recover_skeleton(y_hat, center, radius)
+        return x, y, y_hat
+
+    def _vis_pred_gt_keypoints(self, x, y, y_hat):
         fig = plt.figure()
         ax_pred = fig.add_subplot(231)
         ax_gt = fig.add_subplot(232)
@@ -353,20 +350,23 @@ class LitModel(pl.LightningModule):
         
         return losses, x, y, y_hat
     
-    def _inference(self, batch):
+    def _evaluate(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
         y_hat = self.model(x)
         return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
+        c = batch['centroid']
+        r = batch['radius']
+
         losses, x, y, y_hat = self._calculate_loss(batch)
 
         if y_hat is None:
             log_dict = {}
         else:
-            y_hat = torch2numpy(y_hat)
-            y = torch2numpy(y)
+            y = self._recover_skeleton(y, c, r)
+            y_hat = self._recover_skeleton(y_hat, c, r)
             mpjpe, pampjpe = calulate_error(y_hat, y)
             log_dict = {'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}
 
@@ -375,44 +375,44 @@ class LitModel(pl.LightningModule):
 
         self.log_dict(log_dict, sync_dist=True)
 
-        # if batch_idx == 0:
-        #     self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
-        # self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}, sync_dist=True)
         return losses['loss']
     
     def validation_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
 
-        x, y, y_hat = self._inference(batch)
-
-        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-
-        y_hat = torch2numpy(y_hat)
-        y = torch2numpy(y)
+        x, y, y_hat = self._evaluate(batch)
+        x, y, y_hat = self._recover_data(x, y, y_hat, c, r)
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
         self.log_dict({'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
         if batch_idx == 0:
-            self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
+            self._vis_pred_gt_keypoints(x, y, y_hat)
     
     def test_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
 
-        x, y, y_hat = self._inference(batch)
-
-        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-
-        y_hat = torch2numpy(y_hat)
-        y = torch2numpy(y)
+        x, y, y_hat = self._evaluate(batch)
+        x, y, y_hat = self._recover_data(x, y, y_hat, c, r)
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
         self.log_dict({'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
         if batch_idx == 0:
-            self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
+            self._vis_pred_gt_keypoints(x, y, y_hat)
+
+    def predict_step(self, batch, batch_idx):
+        x = batch['point_clouds']
+        c = batch['centroid']
+        r = batch['radius']
+
+        y_hat = self.model(x)
+        x = self._recover_point_cloud(x, c, r)
+        y_hat = self._recover_skeleton(y_hat, c, r)
+        
+        pred = {'name': batch['name'], 'index': batch['index'], 'keypoints': y_hat, 'point_clouds': x}
+        
+        return pred
 
     def configure_optimizers(self):
         optimizer = create_optimizer(self.hparams, self.model.parameters())

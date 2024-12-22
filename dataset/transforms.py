@@ -108,13 +108,15 @@ class UniformSample():
         #     sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
         for i in range(self.offset):
             sample['point_clouds'].insert(0, sample['point_clouds'][0])
-            sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
             sample['point_clouds'].append(sample['point_clouds'][-1])
-            sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
+            if 'keypoints' in sample:
+                sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
+                sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
         # start_idx = np.random.randint(0, len(sample['point_clouds']) - self.clip_len + 1)
         start_idx = sample['index']
         sample['point_clouds'] = sample['point_clouds'][start_idx:start_idx+self.clip_len]
-        sample['keypoints'] = sample['keypoints'][start_idx:start_idx+self.clip_len]
+        if 'keypoints' in sample:
+            sample['keypoints'] = sample['keypoints'][start_idx:start_idx+self.clip_len]
         # print('uniform sample', len(sample['point_clouds']), len(sample['keypoints']))
         return sample
     
@@ -129,7 +131,8 @@ class MultiFrameAggregate():
         if self.num_frames <= total_frames:
             sample['point_clouds'] = [np.concatenate(sample['point_clouds'][i-self.offset:i+self.offset]) for i in range(self.offset, total_frames-self.offset)]
             # sample['point_clouds'] = [np.concatenate(sample['point_clouds'][np.maximum(0, i-self.offset):np.minimum(i+self.offset+1, total_frames-1)]) for i in range(total_frames)]
-            sample['keypoints'] = sample['keypoints'][self.offset:-self.offset]
+            if 'keypoints' in sample:
+                sample['keypoints'] = sample['keypoints'][self.offset:-self.offset]
         # print('multi frame aggregate', len(sample['point_clouds']), len(sample['keypoints']))
         return sample
 
@@ -142,7 +145,8 @@ class RandomScale():
         scale = np.random.uniform(self.scale_min, self.scale_max)
         for i in range(len(sample['point_clouds'])):
             sample['point_clouds'][i][...,:3] *= scale
-        sample['keypoints'] *= scale
+        if 'keypoints' in sample:
+            sample['keypoints'] *= scale
         sample['scale'] = scale
         return sample
     
@@ -157,7 +161,8 @@ class RandomRotate():
         rot_matrix = np.array([[np.cos(angle_1), -np.sin(angle_1), 0], [np.sin(angle_1), np.cos(angle_1), 0], [0, 0, 1]]) @ np.array([[np.cos(angle_2), 0, np.sin(angle_2)], [0, 1, 0], [-np.sin(angle_2), 0, np.cos(angle_2)]])
         for i in range(len(sample['point_clouds'])):
             sample['point_clouds'][i][...,:3] = sample['point_clouds'][i][...,:3] @ rot_matrix
-        sample['keypoints'] = sample['keypoints'] @ rot_matrix
+        if 'keypoints' in sample:
+            sample['keypoints'] = sample['keypoints'] @ rot_matrix
         sample['rotation_matrix'] = rot_matrix
         return sample
     
@@ -169,7 +174,8 @@ class RandomTranslate():
         translate = np.random.uniform(-self.translate_range, self.translate_range, 3)
         for i in range(len(sample['point_clouds'])):
             sample['point_clouds'][i][...,:3] += translate
-        sample['keypoints'] += translate
+        if 'keypoints' in sample:
+            sample['keypoints'] += translate
         sample['translate'] = translate
         return sample
 
@@ -219,7 +225,7 @@ class AddAroundPoint():
 class GetCentroidRadius():
     def __init__(self, centroid_type='minball'):
         self.centroid_type = centroid_type
-        if centroid_type not in ['none', 'zonly', 'mean', 'minball']:
+        if centroid_type not in ['none', 'zonly', 'mean', 'median', 'minball']:
             raise ValueError('centroid_type must be "mean" or "minball"')
         
     def __call__(self, sample):
@@ -234,6 +240,9 @@ class GetCentroidRadius():
             radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
         elif self.centroid_type == 'mean':
             centroid = np.mean(pc_dedupe[...,:3], axis=0)
+            radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
+        elif self.centroid_type == 'median':
+            centroid = np.median(pc_dedupe[...,:3], axis=0)
             radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
         elif self.centroid_type == 'minball':
             try:
@@ -260,8 +269,9 @@ class Normalize():
                 sample['point_clouds'][i][...,3:] /= np.array(self.feat_scale)[np.newaxis][np.newaxis]
                 sample['feat_scale'] = self.feat_scale
         # print('normalize', len(sample['point_clouds']), len(sample['keypoints']), sample['centroid'], sample['radius'])
-        sample['keypoints'] -= sample['centroid'][np.newaxis][np.newaxis]
-        sample['keypoints'] /= sample['radius']
+        if 'keypoints' in sample:
+            sample['keypoints'] -= sample['centroid'][np.newaxis][np.newaxis]
+            sample['keypoints'] /= sample['radius']
         return sample
     
 class Flip():
@@ -277,8 +287,9 @@ class Flip():
         for l, r in zip(left, right):
             indices[l] = r
             indices[r] = l
-        sample['keypoints'] = sample['keypoints'][:, indices]
-        sample['keypoints'][..., 0] *= -1
+        if 'keypoints' in sample:
+            sample['keypoints'] = sample['keypoints'][:, indices]
+            sample['keypoints'][..., 0] *= -1
         return sample
     
 class ToSimpleCOCO():
@@ -313,8 +324,10 @@ class ToTensor():
             sample['point_clouds'] = [torch.from_numpy(pc).float() for pc in sample['point_clouds']]
         else:
             sample['point_clouds'] = torch.from_numpy(sample['point_clouds']).float()
-        sample['keypoints'] = torch.from_numpy(sample['keypoints']).float()
-        sample['action'] = torch.tensor([sample['action']]).float()
+        if 'keypoints' in sample:
+            sample['keypoints'] = torch.from_numpy(sample['keypoints']).float()
+        if 'action' in sample:
+            sample['action'] = torch.tensor([sample['action']]).float()
         sample['index'] = torch.tensor([sample['index']]).float()
         sample['centroid'] = torch.from_numpy(sample['centroid']).float()
         sample['radius'] = torch.tensor([sample['radius']]).float()
