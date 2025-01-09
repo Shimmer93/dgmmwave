@@ -29,7 +29,7 @@ from model.model_poseformer import PoseTransformer
 from model.metrics import calulate_error
 from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
 from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
-from loss.mpjpe import mpjpe as mpjpe_mmwave
+from loss.mpjpe import mpjpe as mpjpe_poseformer
 from misc.utils import torch2numpy
 from misc.skeleton import SimpleCOCOSkeleton
 
@@ -268,24 +268,19 @@ class LitModel(pl.LightningModule):
                 l_d = F.binary_cross_entropy_with_logits(d, d0)
                 loss = l_d
                 losses = {'loss': loss, 'l_d': l_d}
-            elif self.hparams.model_name.lower() == 'ptr':
-            #TODO: Implement the loss function of posetransformer
+            else:
+                raise ValueError('mode must be train or adapt!')
+        elif self.hparams.model_name.lower() == 'ptr':
                 x = x[:, :, :, :3]
                 y_hat = self.model(x)
                 y_mod = torch.clone(y)
                 y_mod[:, :, 0] = 0
                 # loss = self.losses['pc'](y_hat, y)
-                loss = mpjpe_mmwave(y_hat, y_mod)
+                loss = mpjpe_poseformer(y_hat, y_mod)
                 loss = y_mod.shape[0] * y_mod.shape[1] * loss
-                print("The original loss is", loss)
-                # The current problems:
-                # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
-                # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
-                # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
-                # # torch.cuda.empty_cache()
+                losses = {'loss': loss}
+                # print("The original loss is", loss)
                 torch.cuda.empty_cache()
-            else:
-                raise ValueError('mode must be train or adapt!')
         # elif self.hparams.model_name.lower() == 'dg':
         #     l_pos, y_hat = self.model.forward_train(x, y)
         #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
