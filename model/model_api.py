@@ -78,8 +78,8 @@ def create_model(hparams):
                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
                               dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
-    elif hparams.model_name.lower() == 'ptr':
-        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
+    elif (hparams.model_name.lower() == 'ptr') or (hparams.model_name.lower() == 'ptr2'):
+        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_points = hparams.num_input_points, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
         num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
@@ -190,7 +190,9 @@ class LitModel(pl.LightningModule):
         y = batch['keypoints']
         if self.hparams.model_name.lower() == 'p4t' or self.hparams.model_name.lower() == 'p4tda3':
             y_hat = self.model(x)
+            # print(x.shape)
             loss = self.losses['pc'](y_hat, y)
+            losses = {'loss': loss}
         elif self.hparams.model_name.lower() == 'p4tda':
             if self.hparams.mode == 'train':
                 x, s = torch.split(x, [5, 1], dim=-1)
@@ -270,17 +272,29 @@ class LitModel(pl.LightningModule):
                 losses = {'loss': loss, 'l_d': l_d}
             else:
                 raise ValueError('mode must be train or adapt!')
+        # This is the model for three input channels
         elif self.hparams.model_name.lower() == 'ptr':
-                x = x[:, :, :, :3]
-                y_hat = self.model(x)
-                y_mod = torch.clone(y)
-                y_mod[:, :, 0] = 0
-                # loss = self.losses['pc'](y_hat, y)
-                loss = mpjpe_poseformer(y_hat, y_mod)
-                loss = y_mod.shape[0] * y_mod.shape[1] * loss
-                losses = {'loss': loss}
-                # print("The original loss is", loss)
-                torch.cuda.empty_cache()
+            x = x[:, :, :, :3]
+            # print(x.shape)
+            y_hat = self.model(x)
+            y_mod = torch.clone(y)
+            # loss = self.losses['pc'](y_hat, y)
+            loss = mpjpe_poseformer(y_hat, y_mod)
+            loss = y_mod.shape[0] * y_mod.shape[1] * loss
+            losses = {'loss': loss}
+            # print("The original loss is", loss)
+            torch.cuda.empty_cache()
+        # This is the model for five input channels
+        elif self.hparams.model_name.lower() == 'ptr2':
+            # print(x.shape)
+            y_hat = self.model(x)
+            y_mod = torch.clone(y)
+            # loss = self.losses['pc'](y_hat, y)
+            loss = mpjpe_poseformer(y_hat, y_mod)
+            loss = y_mod.shape[0] * y_mod.shape[1] * loss
+            losses = {'loss': loss}
+            # print("The original loss is", loss)
+            torch.cuda.empty_cache()
         # elif self.hparams.model_name.lower() == 'dg':
         #     l_pos, y_hat = self.model.forward_train(x, y)
         #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')

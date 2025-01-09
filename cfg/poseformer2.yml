@@ -30,7 +30,7 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-model_name: ptr
+model_name: ptr2
 stride: 1
 epochs: 200
 dropout: 0
@@ -39,7 +39,7 @@ data_augmentation: False
 number_of_frames: 5
 num_joints: 13
 num_input_points: 64
-in_chans: 3
+in_chans: 5
 embed_dim_ratio: 32
 depth: 4
 num_heads: 8
