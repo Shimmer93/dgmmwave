@@ -10,24 +10,24 @@ epochs: 100
 # --------------------------------------
 data_pkl: mmfi.pkl
 dataset_name: reference
-train_split: train_rdn_p3
-val_split: val_rdn_p3
+train_split: val_rdn_p3
+val_split: test_rdn_p3
 test_split: test_rdn_p3
 ref_data_pkl: mri.pkl
-ref_split: train_s1_p1
+ref_split: val_s1_p1
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
 optim_name: adamw
-lr: 0.00001
+lr: 0.0001
 weight_decay: 0.00001
 momentum: 0.9
 # --------------------------------------
 # Learning rate scheduler parameters
 # --------------------------------------
 sched_name: cosine
-warmup_lr: 0.000001
-min_lr: 0.000001
+warmup_lr: 0.00001
+min_lr: 0.00001
 warmup_epochs: 20
 # --------------------------------------
 # Model parameters
@@ -52,14 +52,14 @@ dim_proposal: 64
 heads_proposal: 4
 dim_head_proposal: 16
 num_joints: 13 
-num_proposal: 64
+num_proposal: 16
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
 loss_names: [mse]
 gamma: 0.8
-w_rec: 1.0
-w_d: 1.0
+w_rec: 0.001
+w_d: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -102,6 +102,6 @@ translate_prob: 0.5
 only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
-max_len: 1024
+max_len: 256
 skeleton_type: 'mmfi'
 ref_skeleton_type: 'coco'

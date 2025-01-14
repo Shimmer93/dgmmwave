@@ -9,6 +9,7 @@ import torch.optim.lr_scheduler as sched
 import pytorch_lightning as pl
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import matplotlib.pyplot as plt
+import pickle
 
 import os
 from collections import OrderedDict
@@ -22,6 +23,8 @@ from model.P4Transformer.model_da3 import P4TransformerDA3
 from model.P4Transformer.model_da4 import P4TransformerDA4
 from model.P4Transformer.model_da5 import P4TransformerDA5
 from model.P4Transformer.model_da6 import P4TransformerDA6
+from model.P4Transformer.model_da7 import P4TransformerDA7
+from model.P4Transformer.model_da8 import P4TransformerDA8
 from model.debug_model import DebugModel
 from model.model_poseformer import PoseTransformer
 # from model.dg_model import DGModel
@@ -78,19 +81,24 @@ def create_model(hparams):
                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
                               dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
-    elif (hparams.model_name.lower() == 'ptr') or (hparams.model_name.lower() == 'ptr2'):
-        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_points = hparams.num_input_points, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
+    elif hparams.model_name.lower() == 'p4tda7':
+        model = P4TransformerDA7(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+                              emb_relu=hparams.emb_relu,
+                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features)
+    elif hparams.model_name.lower() == 'p4tda8':
+        model = P4TransformerDA8(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+                              emb_relu=hparams.emb_relu,
+                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+                              dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
+                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
+    elif hparams.model_name.lower() == 'ptr':
+        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
         num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
     elif hparams.model_name.lower() == 'debug':
         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
-    # elif hparams.model_name.lower() == 'dg':
-    #     model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
-    # elif hparams.model_name.lower() == 'dg2':
-    #     model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
     else:
         raise ValueError(f'Unknown model name: {hparams.model_name}')
     
@@ -146,10 +154,26 @@ class LitModel(pl.LightningModule):
         self.save_hyperparameters(hparams)
         self.model = create_model(hparams)
         if hparams.checkpoint_path is not None:
-            self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'])
+            self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'], strict=False)
         self.losses = create_losses(hparams)
 
-    def _vis_pred_gt_keypoints(self, y_hat, y, x):
+    def _recover_point_cloud(self, x, center, radius):
+        x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        x = torch2numpy(x)
+        return x
+    
+    def _recover_skeleton(self, y, center, radius):
+        y = y * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        y = torch2numpy(y)
+        return y
+
+    def _recover_data(self, x, y, y_hat, center, radius):
+        x = self._recover_point_cloud(x, center, radius)
+        y = self._recover_skeleton(y, center, radius)
+        y_hat = self._recover_skeleton(y_hat, center, radius)
+        return x, y, y_hat
+
+    def _vis_pred_gt_keypoints(self, x, y, y_hat):
         fig = plt.figure()
         ax_pred = fig.add_subplot(231)
         ax_gt = fig.add_subplot(232)
@@ -262,103 +286,134 @@ class LitModel(pl.LightningModule):
                 l_d = F.binary_cross_entropy_with_logits(d, d0)
                 d1 = torch.ones_like(d_ref, device=d_ref.device)
                 l_d_ref = F.binary_cross_entropy_with_logits(d_ref, d1)
-                loss = l_pc + self.hparams.w_rec * l_rec + self.hparams.w_d * (l_d + l_d_ref)
-                losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec, 'l_d': l_d+l_d_ref}
+                loss = l_pc + self.hparams.w_d * (l_d + l_d_ref)
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_d': l_d, 'l_d_ref': l_d_ref}
             elif self.hparams.mode == 'adapt':
-                _, d = self.model(x, mode='adapt')
+                y_hat, d, l_rec = self.model(x, mode='adapt')
                 d0 = torch.zeros_like(d, device=d.device)
                 l_d = F.binary_cross_entropy_with_logits(d, d0)
-                loss = l_d
+                loss = self.hparams.w_d * l_d # + self.hparams.w_rec * l_rec
                 losses = {'loss': loss, 'l_d': l_d}
             else:
                 raise ValueError('mode must be train or adapt!')
-        # This is the model for three input channels
+        elif self.hparams.model_name.lower() == 'p4tda7':
+            if self.hparams.mode == 'train':
+                x_ref = batch['ref_point_clouds']
+                y_ref = batch['ref_keypoints']
+                y_hat, d, l_rec = self.model(x, mode='train')
+                _, d_ref, _ = self.model(x_ref, mode='train')
+                l_pc = self.losses['pc'](y_hat, y)
+                d0 = torch.zeros_like(d, device=d.device)
+                l_d = F.binary_cross_entropy_with_logits(d, d0)
+                d1 = torch.ones_like(d_ref, device=d_ref.device)
+                l_d_ref = F.binary_cross_entropy_with_logits(d_ref, d1)
+                loss = l_pc + self.hparams.w_rec * l_rec + self.hparams.w_d * (l_d + l_d_ref)
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec, 'l_d': l_d, 'l_d_ref': l_d_ref}
+            elif self.hparams.mode == 'adapt':
+                y_hat, d, l_rec = self.model(x, mode='adapt')
+                d0 = torch.zeros_like(d, device=d.device)
+                l_d = F.binary_cross_entropy_with_logits(d, d0)
+                # print(f'l_d: {torch2numpy(l_d):.4f}')
+                loss = self.hparams.w_d * l_d #+ self.hparams.w_rec * l_rec
+                losses = {'loss': loss, 'l_d': l_d}
+            else:
+                raise ValueError('mode must be train or adapt!')
+        elif self.hparams.model_name.lower() == 'p4tda8':
+            if self.hparams.mode == 'train':
+                x_ref = batch['ref_point_clouds']
+                y_hat, y_hat_ref, y_hat2, y_hat_ref2, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
+                l_pc = self.losses['pc'](y_hat, y)
+                l_pc2 = self.losses['pc'](y_hat2, y.clone())
+                # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
+                # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
+                loss = l_pc + l_pc2 + self.hparams.w_rec * (l_rec + l_rec_ref) + self.hparams.w_mem * l_mem # + w_con * l_con
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
+            else:
+                raise ValueError('mode must be train!')
         elif self.hparams.model_name.lower() == 'ptr':
+            #TODO: Implement the loss function of posetransformer
             x = x[:, :, :, :3]
-            # print(x.shape)
             y_hat = self.model(x)
             y_mod = torch.clone(y)
+            y_mod[:, :, 0] = 0
             # loss = self.losses['pc'](y_hat, y)
-            loss = mpjpe_poseformer(y_hat, y_mod)
+            loss = mpjpe_mmwave(y_hat, y_mod)
             loss = y_mod.shape[0] * y_mod.shape[1] * loss
-            losses = {'loss': loss}
-            # print("The original loss is", loss)
+            print("The original loss is", loss)
+            # The current problems:
+            # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
+            # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
+            # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
+            # # torch.cuda.empty_cache()
             torch.cuda.empty_cache()
-        # This is the model for five input channels
-        elif self.hparams.model_name.lower() == 'ptr2':
-            # print(x.shape)
-            y_hat = self.model(x)
-            y_mod = torch.clone(y)
-            # loss = self.losses['pc'](y_hat, y)
-            loss = mpjpe_poseformer(y_hat, y_mod)
-            loss = y_mod.shape[0] * y_mod.shape[1] * loss
-            losses = {'loss': loss}
-            # print("The original loss is", loss)
-            torch.cuda.empty_cache()
-        # elif self.hparams.model_name.lower() == 'dg':
-        #     l_pos, y_hat = self.model.forward_train(x, y)
-        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-        #     loss = l_pos
-        #     # l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
-        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-        #     # loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
-        # elif self.hparams.model_name.lower() == 'dg2':
-        #     l_pos, y_hat = self.model.forward_train(x, y)
-        #     loss = l_pos
         else:
             raise NotImplementedError
         
         return losses, x, y, y_hat
-
+    
+    def _evaluate(self, batch):
+        x = batch['point_clouds']
+        y = batch['keypoints']
+        y_hat = self.model(x)
+        return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
+        c = batch['centroid']
+        r = batch['radius']
+
         losses, x, y, y_hat = self._calculate_loss(batch)
 
-        y_hat = torch2numpy(y_hat)
-        y = torch2numpy(y)
-        mpjpe, pampjpe = calulate_error(y_hat, y)
+        if y_hat is None:
+            log_dict = {}
+        else:
+            y = self._recover_skeleton(y, c, r)
+            y_hat = self._recover_skeleton(y_hat, c, r)
+            mpjpe, pampjpe = calulate_error(y_hat, y)
+            log_dict = {'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}
 
-        log_dict = {'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}
         for loss_name, loss in losses.items():
             log_dict[f'train_{loss_name}'] = loss
 
         self.log_dict(log_dict, sync_dist=True)
-        # self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}, sync_dist=True)
+
         return losses['loss']
     
     def validation_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
 
-        _, x, y, y_hat = self._calculate_loss(batch)
-
-        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-
-        y_hat = torch2numpy(y_hat)
-        y = torch2numpy(y)
+        x, y, y_hat = self._evaluate(batch)
+        x, y, y_hat = self._recover_data(x, y, y_hat, c, r)
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
         self.log_dict({'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
         if batch_idx == 0:
-            self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
+            self._vis_pred_gt_keypoints(x, y, y_hat)
     
     def test_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
 
-        _, x, y, y_hat = self._calculate_loss(batch)
-
-        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-
-        y_hat = torch2numpy(y_hat)
-        y = torch2numpy(y)
+        x, y, y_hat = self._evaluate(batch)
+        x, y, y_hat = self._recover_data(x, y, y_hat, c, r)
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
         self.log_dict({'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
         if batch_idx == 0:
-            self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
+            self._vis_pred_gt_keypoints(x, y, y_hat)
+
+    def predict_step(self, batch, batch_idx):
+        x = batch['point_clouds']
+        c = batch['centroid']
+        r = batch['radius']
+
+        y_hat = self.model(x)
+        x = self._recover_point_cloud(x, c, r)
+        y_hat = self._recover_skeleton(y_hat, c, r)
+        
+        pred = {'name': batch['name'], 'index': batch['index'], 'keypoints': y_hat, 'point_clouds': x}
+        
+        return pred
 
     def configure_optimizers(self):
         optimizer = create_optimizer(self.hparams, self.model.parameters())

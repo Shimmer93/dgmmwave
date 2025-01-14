@@ -1,10 +1,13 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 from argparse import ArgumentParser
 # import wandb
 import os
 
 import torch
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import ModelCheckpoint, TQDMProgressBar
+from pytorch_lightning.callbacks import ModelCheckpoint, RichProgressBar
 from pytorch_lightning.loggers import TensorBoardLogger #WandbLogger, 
 from pytorch_lightning.strategies.ddp import DDPStrategy
 
@@ -29,7 +32,7 @@ def main(args):
             save_top_k=1,
             save_last=True,
             mode='min'),
-        TQDMProgressBar(refresh_rate=20)
+        RichProgressBar(refresh_rate=20)
     ]
 
     # wandb_on = True #if args.dev+args.test==0 else False
@@ -61,7 +64,25 @@ def main(args):
         benchmark=args.benchmark
     )
 
-    if bool(args.test):
+    if bool(args.predict):
+        import numpy as np
+        import pickle
+        predictions = trainer.predict(model, datamodule=dm, ckpt_path=None if args.only_load_model else args.checkpoint_path, return_predictions=True)
+        data_out = {}
+        for pred in predictions:
+            if pred['name'] not in data_out:
+                data_out[pred['name']] = {'raw': [], 'keypoints': [], 'point_clouds': []}
+            data_out[pred['name']]['raw'].append(pred)
+
+        for name in data_out:
+            data_out[name]['raw'] = sorted(data_out[name]['raw'], key=lambda x: x['index'][0])
+            data_out[name]['keypoints'] = np.concatenate([pred['keypoints'] for pred in data_out[name]['raw']], axis=0)
+            data_out[name]['point_clouds'] = np.concatenate([pred['point_clouds'] for pred in data_out[name]['raw']], axis=0)
+            del data_out[name]['raw']
+
+        with open(os.path.join('logs', args.exp_name, args.version, 'predictions.pkl'), 'wb') as f:
+            pickle.dump(data_out, f)
+    elif bool(args.test):
         trainer.test(model, datamodule=dm, ckpt_path=None if args.only_load_model else args.checkpoint_path)
     else:
         trainer.fit(model, datamodule=dm, ckpt_path=None if args.only_load_model else args.checkpoint_path)
@@ -87,6 +108,7 @@ if __name__ == "__main__":
     parser.add_argument('--pin_memory', action='store_true')
     parser.add_argument("--checkpoint_path", type=str, default=None)
     parser.add_argument('--test', action='store_true')
+    parser.add_argument('--predict', action='store_true')
     parser.add_argument('--exp_name', type=str, default='fasternet')
     parser.add_argument("--version", type=str, default="0")
     parser.add_argument('--only_load_model', action='store_true')

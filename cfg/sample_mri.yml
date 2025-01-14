@@ -92,5 +92,5 @@ translate_prob: 0.5
 only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
-max_len: 1024
+max_len: 256
 skeleton_type: 'coco'
