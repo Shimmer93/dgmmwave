@@ -4,34 +4,34 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: 300
+epochs: 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
-data_pkl: mri.pkl
+data_pkl: mmbody.pkl
 dataset_name: temporal
-train_split: train_s1_p1
-val_split: val_s1_p1
-test_split: test_s1_p1
+train_split: train
+val_split: val
+test_split: test
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
 optim_name: adamw
-lr: 0.00001
+lr: 0.0001
 weight_decay: 0.00001
 momentum: 0.9
 # --------------------------------------
 # Learning rate scheduler parameters
 # --------------------------------------
 sched_name: cosine
-warmup_lr: 0.000001
-min_lr: 0.000001
+warmup_lr: 0.00001
+min_lr: 0.00001
 warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-mode: train
-model_name: p4tda2
+mode: inference
+model_name: p4tda8
 radius: 0.7
 nsamples: 32
 spatial_stride: 8
@@ -46,13 +46,18 @@ mlp_dim: 2048
 output_dim: 39
 mem_size: 128
 features: 2
+dim_proposal: 64
+heads_proposal: 4
+dim_head_proposal: 16
+num_joints: 13 
+num_proposal: 16
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
-loss_names: [mse, segment]
+loss_names: [mse]
 gamma: 0.8
-w_seg: 1.0
-w_rec: 1.0
+w_rec: 0.001
+w_d: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -67,7 +72,7 @@ random_rotate: true
 random_translate: true
 reduce_keypoint_len: true
 pad: true
-gen_seg_gt: true
+gen_seg_gt: false
 to_simple_coco: true
 # parameters
 clip_len: 7
@@ -87,13 +92,13 @@ feat_scale: null
 scale_min: 0.9
 scale_max: 1.1
 scale_prob: 0.5
-angle_min: -3.141592653589793
-angle_max: 3.141592653589793
+angle_min: -0.3141592653589793
+angle_max: 0.3141592653589793
 rotate_prob: 0.5
 translate_range: 0.05
 translate_prob: 0.5
 only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
-max_len: 1024
-skeleton_type: 'coco'
+max_len: 256
+skeleton_type: 'mmbody'

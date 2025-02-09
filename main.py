@@ -104,7 +104,6 @@ if __name__ == "__main__":
     parser.add_argument('-e', "--batch_size_eva", type=int, default=1000, help='batch_size for evaluation')
     parser.add_argument('--clip_grad', type=float, default=1.0)
     parser.add_argument("--model_ckpt_dir", type=str, default="./model_ckpt/")
-    parser.add_argument("--data_dir", type=str, default="../../data/imagenet")
     parser.add_argument('--pin_memory', action='store_true')
     parser.add_argument("--checkpoint_path", type=str, default=None)
     parser.add_argument('--test', action='store_true')

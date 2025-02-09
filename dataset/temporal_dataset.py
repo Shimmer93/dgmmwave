@@ -32,6 +32,7 @@ class TemporalDataset(Dataset):
             seq_idx += 1
         sample = deepcopy(self.data[seq_idx])
 
+        sample['skeleton_type'] = self.data_path.split('/')[-1].split('.')[0]
         sample['index'] = idx
         sample['centroid'] = np.array([0.,0.,0.])
         sample['radius'] = 1.

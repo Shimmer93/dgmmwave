@@ -79,8 +79,8 @@ clip_len: 7
 outlier_type: 'radius'
 num_neighbors: 3
 std_multiplier: 1.0
-radius: 1.0
-min_neighbors: 2
+radius: 0.1
+min_neighbors: 5
 centroid_type: 'median'
 num_frames: 3
 jitter_std: 0.001

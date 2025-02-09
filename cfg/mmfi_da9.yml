@@ -1,0 +1,159 @@
+strategy: ddp
+benchmark: True
+pretrained: False
+sync_batchnorm: False
+clip_grad: null
+precision: 16
+epochs: &epochs 100
+# --------------------------------------
+# Dataset parameters
+# --------------------------------------
+train_dataset:
+  name: ReferenceDataset
+  params:
+    data_path: &data_path data/mmfi.pkl
+    split: val_rdn_p3
+    ref_data_path: data/mri.pkl
+    ref_split: val_s1_p1
+val_dataset:
+  name: TemporalDataset
+  params:
+    data_path: *data_path
+    split: test_rdn_p3
+test_dataset:
+  name: TemporalDataset
+  params:
+    data_path: *data_path
+    split: test_rdn_p3
+# --------------------------------------
+# Optimizer parameters
+# --------------------------------------
+optim_name: AdamW
+optim_params:
+  lr: 0.0001
+  weight_decay: 0.00001
+# --------------------------------------
+# Learning rate scheduler parameters
+# --------------------------------------
+sched_name: LinearWarmupCosineAnnealingLR
+sched_params:
+  warmup_epochs: 20
+  max_epochs: *epochs
+  warmup_start_lr: 0.00001
+  eta_min: 0.00001
+# --------------------------------------
+# Model parameters
+# --------------------------------------
+mode: train
+model_name: P4TransformerDA9
+model_params:
+  radius: 0.7
+  nsamples: 32
+  spatial_stride: 8
+  temporal_kernel_size: 3
+  temporal_stride: 1
+  emb_relu: false
+  dim: 1024
+  depth: 5
+  heads: 8
+  dim_head: 128
+  mlp_dim: 2048
+  mem_size: 32
+  features: 3
+  dim_proposal: 64
+  heads_proposal: 4
+  dim_head_proposal: 16
+  num_joints: 13 
+  num_proposal: 8
+# --------------------------------------
+# Loss parameters
+# --------------------------------------
+loss_name: MSELoss
+loss_params: null
+# weight for auxiliary losses
+w_rec: 0.001
+w_mem: 0.001
+# --------------------------------------
+# Augmentation parameters
+# --------------------------------------
+train_pipeline:
+  - name: UniformSample
+    params: 
+      clip_len: 7
+  - name: GetCentroidRadius
+    params: 
+      centroid_type: 'zonly'
+  - name: ToSimpleCOCO
+    params: null
+  - name: MultiFrameAggregate
+    params:
+      num_frames: 3
+  - name: RemoveOutliers
+    params: 
+      outlier_type: 'box'
+      radius: 2.0
+  - name: RandomJitter
+    params:
+      jitter_std: 0.001
+    prob: 0.5
+  # - name: Flip
+  #   params:
+  #     left_idxs: [5,6,7,11,12,13,15,17]
+  #     right_idxs: [2,3,4,8,9,10,14,16]
+    prob: 0.5
+  - name: Normalize
+    params:
+      feat_scale: null
+  - name: RandomScale
+    params:
+      scale_min: 0.9
+      scale_max: 1.1
+    prob: 0.5
+  - name: RandomRotate
+    params:
+      angle_min: -0.3141592653589793
+      angle_max: 0.3141592653589793
+    prob: 0.5
+  - name: RandomTranslate
+    params:
+      translate_range: 0.01
+    prob: 0.5
+  - name: ReduceKeypointLen
+    params:
+      only_one: true
+      keep_type: 'middle'
+      frame_to_reduce: 0
+  - name: Pad
+    params:
+      max_len: 256
+  - name: ToTensor
+    params: null
+val_pipeline:
+  - name: UniformSample
+    params: 
+      clip_len: 7
+  - name: GetCentroidRadius
+    params: 
+      centroid_type: 'zonly'
+  - name: ToSimpleCOCO
+    params: null
+  - name: MultiFrameAggregate
+    params:
+      num_frames: 3
+  - name: RemoveOutliers
+    params: 
+      outlier_type: 'box'
+      radius: 2.0
+  - name: Normalize
+    params:
+      feat_scale: null
+  - name: ReduceKeypointLen
+    params:
+      only_one: true
+      keep_type: 'middle'
+      frame_to_reduce: 0
+  - name: Pad
+    params:
+      max_len: 256
+  - name: ToTensor
+    params: null
