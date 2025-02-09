@@ -13,16 +13,16 @@ from pytorch_lightning.strategies.ddp import DDPStrategy
 
 from dataset.data_api import LitDataModule
 from model.model_api import LitModel
-from model.model_ema_api import MeanTeacherLitModel
+# from model.model_ema_api import MeanTeacherLitModel
 from misc.utils import load_cfg, merge_args_cfg
 
 def main(args):
     dm = LitDataModule(hparams=args)
-    if args.mean_teacher:
-        model = MeanTeacherLitModel(hparams=args)
-    else:
-        model = LitModel(hparams=args)
-        # model.load_from_checkpoint(args.checkpoint_path)
+    # if args.mean_teacher:
+    #     model = MeanTeacherLitModel(hparams=args)
+    # else:
+    model = LitModel(hparams=args)
+    # model.load_from_checkpoint(args.checkpoint_path)
 
     callbacks = [
         ModelCheckpoint(

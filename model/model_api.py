@@ -107,7 +107,7 @@ class LitModel(pl.LightningModule):
     def _calculate_loss(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
-        if self.hparams.model_name == 'P4Transformer':
+        if self.hparams.model_name in ['P4Transformer', 'SPiKE']:
             y_hat = self.model(x)
             loss = self.loss(y_hat, y)
             losses = {'loss': loss}

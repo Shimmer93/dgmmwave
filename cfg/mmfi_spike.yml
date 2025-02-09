@@ -45,26 +45,19 @@ sched_params:
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: P4TransformerDA9
+model_name: SPiKE
 model_params:
-  radius: 0.7
+  radius: 0.2
   nsamples: 32
-  spatial_stride: 8
-  temporal_kernel_size: 3
-  temporal_stride: 1
-  emb_relu: false
+  spatial_stride: 32
   dim: 1024
   depth: 5
   heads: 8
-  dim_head: 128
+  dim_head: 256
   mlp_dim: 2048
-  mem_size: 128
-  features: 3
-  dim_proposal: 64
-  heads_proposal: 4
-  dim_head_proposal: 16
-  num_joints: 13 
-  num_proposal: 8
+  num_coord_joints: 39
+  dropout1: 0.0
+  dropout2: 0.0
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -98,8 +91,8 @@ train_pipeline:
     prob: 0.5
   # - name: Flip
   #   params:
-  #     left_idxs: [5,6,7,11,12,13,15,17]
-  #     right_idxs: [2,3,4,8,9,10,14,16]
+  #     left_idxs: [5: 6: 7: 11: 12: 13: 15: 17]
+  #     right_idxs: [2: 3: 4: 8: 9: 10: 14: 16]
     prob: 0.5
   - name: Normalize
     params:

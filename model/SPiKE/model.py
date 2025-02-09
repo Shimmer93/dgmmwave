@@ -79,7 +79,7 @@ class SPiKE(nn.Module):
         Forward pass of the SPiKE model.
         """
         device = x.device
-        xyzs, features = self.stem(x)  # [B, L, n, 3], [B, L, C, n]
+        xyzs, features = self.stem(x[..., :3])  # [B, L, n, 3], [B, L, C, n]
 
         batch_size, seq_len, n, _ = xyzs.shape
         t = torch.arange(seq_len, device=device).view(1, seq_len, 1, 1).expand(batch_size, -1, n, -1) + 1
@@ -95,5 +95,6 @@ class SPiKE(nn.Module):
         output = self.transformer(embedding)
         output = torch.max(output, dim=1, keepdim=False)[0]
         joints_coord = self.mlp_head(output)
+        joints_coord = joints_coord.view(batch_size, 1, -1, 3)
 
         return joints_coord
