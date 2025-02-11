@@ -5,6 +5,7 @@ import os
 from glob import glob
 from tqdm import tqdm
 import argparse
+import h5py
 
 class Preprocessor():
     def __init__(self, root_dir, out_dir):
@@ -296,6 +297,82 @@ class MRIPreprocessor(Preprocessor):
     def save(self):
         super().save('mri')
 
+class ITOPPreprocessor(Preprocessor):
+    def __init__(self, root_dir, out_dir, view):
+        super().__init__(root_dir, out_dir)
+        assert view in ['side', 'top'], 'Invalid view'
+        self.view = view
+
+    def process(self):
+        train_val_data_fn = os.path.join(self.root_dir, f'ITOP_{self.view}_train_point_cloud.h5')
+        train_val_labels_fn = os.path.join(self.root_dir, f'ITOP_{self.view}_train_labels.h5')
+        test_data_fn = os.path.join(self.root_dir, f'ITOP_{self.view}_test_point_cloud.h5')
+        test_labels_fn = os.path.join(self.root_dir, f'ITOP_{self.view}_test_labels.h5')
+
+        train_val_data, train_val_ids = self._read_h5(train_val_data_fn, ['data', 'id'])
+        train_val_labels = self._read_h5(train_val_labels_fn, ['is_valid', 'real_world_coordinates', 'segmentation'])
+
+        test_data, test_ids = self._read_h5(test_data_fn, ['data', 'id'])
+        test_labels = self._read_h5(test_labels_fn, ['is_valid', 'real_world_coordinates', 'segmentation'])
+
+        train_val_list = self._process_split(train_val_data, train_val_ids, train_val_labels)
+        test_list = self._process_split(test_data, test_ids, test_labels)
+
+        train_val_seq_idxs = np.arange(len(train_val_list))
+        np.random.shuffle(train_val_seq_idxs)
+        num_train = int(len(train_val_seq_idxs) * 0.8)
+        self.results['splits']['train'] = train_val_seq_idxs[:num_train]
+        self.results['splits']['val'] = train_val_seq_idxs[num_train:]
+        self.results['splits']['test'] = np.arange(len(test_list)) + len(train_val_list)
+
+        for d in train_val_list + test_list:
+            self.results['sequences'].append(d)
+
+    def save(self):
+        super().save('itop_' + self.view)
+
+    def _read_h5(self, fn, keys):
+        output = []
+        f = h5py.File(fn, 'r')
+        for key in keys:
+            value = f[key][()]
+            output.append(value)
+        f.close()
+        return tuple(output)
+    
+    def _segment_human(self, pc, seg):
+        pc = pc[np.ravel(seg) != -1]
+        return pc
+    
+    def _process_split(self, data, ids, labels):
+        split_list = []
+        last_id = None
+        for pc, id, valid, kps, seg in tqdm(zip(data, ids, labels[0], labels[1], labels[2])):
+            if valid == 0 and (last_id is None or len(split_list[-1]['point_cloud']) > 0):
+                split_list.append({
+                    'point_cloud': [],
+                    'keypoints': [],
+                    'action': -1
+                })
+            else:
+                if id.decode().split('_')[0] != last_id and (last_id is None or len(split_list[-1]['point_cloud']) > 0):
+                    split_list.append({
+                        'point_cloud': [],
+                        'keypoints': [],
+                        'action': -1
+                    })
+                pc = self._segment_human(pc, seg)
+                if self.view == 'top':
+                    pc = pc[..., [0, 2, 1]] * np.array([1, -1, 1])
+
+                split_list[-1]['point_cloud'].append(pc)
+                split_list[-1]['keypoints'].append(kps)
+                last_id = id.decode().split('_')[0]
+
+        split_list = [d for d in split_list if len(d['point_cloud']) >= 5]
+        return split_list
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Preprocess dataset')
     parser.add_argument('--dataset', type=str, default='milipoint', help='Dataset name')
@@ -322,6 +399,10 @@ if __name__ == '__main__':
         preprocessor = MMBodyPreprocessor(args.root_dir, args.out_dir)
     elif dataset == 'mri':
         preprocessor = MRIPreprocessor(args.root_dir, args.out_dir)
+    elif dataset == 'itop_side':
+        preprocessor = ITOPPreprocessor(args.root_dir, args.out_dir, 'side')
+    elif dataset == 'itop_top':
+        preprocessor = ITOPPreprocessor(args.root_dir, args.out_dir, 'top')
     else:
         raise ValueError('Invalid dataset name')
     

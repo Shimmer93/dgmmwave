@@ -14,3 +14,4 @@ miniball
 tensorboard
 torch-tb-profiler
 scikit-learn
+h5py
