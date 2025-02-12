@@ -97,6 +97,28 @@ class MMFiSkeleton:
     left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
     center = 0
 
+class ITOPSkeleton:
+    joint_names = [
+        "nose", "neck", "right_shoulder", "left_shoulder", "right_elbow", "left_elbow", "right_wrist", 
+        "left_wrist", "spine", "right_hip", "left_hip", "right_knee", "left_knee", "right_ankle", 
+        "left_ankle"
+    ]
+    # joint_names = [
+    #     'nose', 'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow', 'left_wrist', 'right_wrist', 
+    #     'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle'
+    # ] 
+    bones = [
+        [14, 12], [12, 10], [13, 11], [11, 9],  [10, 8], [9, 8], [8, 1], [1, 0], [7, 5], [5, 3], 
+        [3, 1], [6, 4], [4, 2], [2, 1]
+    ]
+    left_indices = [3, 5, 7, 10, 12, 14]
+    right_indices = [2, 4, 6, 9, 11, 13]
+
+    num_joints = len(joint_names)
+    flip_indices = get_flip_indices(num_joints, left_indices, right_indices)
+    left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
+    center = 0
+
 class SMPLSkeleton:
     joint_names = [
         "pelvis", "left_hip", "right_hip", "spine1", "left_knee", "right_knee", "spine2", "left_ankle", 
@@ -125,6 +147,9 @@ def mmbody2simplecoco(joints):
 
 def mmfi2simplecoco(joints):
     return joints[..., [9, 14, 11, 15, 12, 16, 13, 1, 4, 2, 5, 3, 6], :]
+
+def itop2simplecoco(joints):
+    return joints[..., [0, 3, 2, 5, 4, 7, 6, 10, 9, 12, 11, 14, 13], :]
 
 def simplecoco2smpl(joints):
     def _j(indices):

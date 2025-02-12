@@ -4,7 +4,7 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
 
-from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco
+from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco, itop2simplecoco
 
 def log(x):
     print(x)
@@ -294,22 +294,20 @@ class Flip():
 class ToSimpleCOCO():
     def __call__(self, sample):
         if sample['skeleton_type'] == 'mmbody':
-            if isinstance(sample['keypoints'], list):
-                sample['keypoints'] = [mmbody2simplecoco(kp) for kp in sample['keypoints']]
-            else:
-                sample['keypoints'] = mmbody2simplecoco(sample['keypoints'])
+            transfer_func = mmbody2simplecoco
         elif sample['skeleton_type'] == 'mri':
-            if isinstance(sample['keypoints'], list):
-                sample['keypoints'] = [coco2simplecoco(kp) for kp in sample['keypoints']]
-            else:
-                sample['keypoints'] = coco2simplecoco(sample['keypoints'])
+            transfer_func = coco2simplecoco
         elif sample['skeleton_type'] == 'mmfi':
-            if isinstance(sample['keypoints'], list):
-                sample['keypoints'] = [mmfi2simplecoco(kp) for kp in sample['keypoints']]
-            else:
-                sample['keypoints'] = mmfi2simplecoco(sample['keypoints'])
+            transfer_func = mmfi2simplecoco
+        elif sample['skeleton_type'] == 'itop':
+            transfer_func = itop2simplecoco
         else:
-            raise ValueError('You should never reach here! skeleton_type must be "mmbody" or "coco"')
+            raise ValueError('You should never reach here! skeleton_type must be "mmbody", "coco", "mmfi" or "itop"')
+        
+        if isinstance(sample['keypoints'], list):
+            sample['keypoints'] = [transfer_func(kp) for kp in sample['keypoints']]
+        else:
+            sample['keypoints'] = transfer_func(sample['keypoints'])
         return sample
 
 class ToTensor():
