@@ -4,14 +4,14 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: 150
+epochs: 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
-data_pkl: mmfi.pkl
+data_pkl: mmfi_lidar.pkl
 dataset_name: temporal
-train_split: train_rdn_p3
-val_split: val_rdn_p3
+train_split: val_rdn_p3
+val_split: test_rdn_p3
 test_split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
@@ -30,23 +30,21 @@ warmup_epochs: 20
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-model_name: ptr
-stride: 1
-epochs: 200
-dropout: 0
-lr_decay: 0.99
-data_augmentation: False
-number_of_frames: 5
-num_joints: 13
-num_input_points: 64
-in_chans: 3
-embed_dim_ratio: 32
-depth: 4
-num_heads: 8
-mlp_ratio: 2.0
-qkv_bias: true
-qk_scale: None
-drop_path_rate: 0.1
+model_name: p4t
+radius: 0.7
+nsamples: 32
+spatial_stride: 8
+temporal_kernel_size: 3
+temporal_stride: 1
+emb_relu: false
+dim: 1024
+depth: 3
+heads: 8
+dim_head: 128
+mlp_dim: 2048
+output_dim: 39
+mem_size: 512
+features: 0
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -94,5 +92,5 @@ translate_prob: 0.5
 only_one: true
 keep_type: 'middle'
 frame_to_reduce: 0
-max_len: 64
+max_len: 256
 skeleton_type: 'mmfi'
