@@ -323,11 +323,11 @@ class MMFiPreprocessor_lidar(Preprocessor):
             # TODO: Use lidar path
             for bin_fn in sorted(glob(os.path.join(d, "lidar/frame*.bin"))):
                 data_tmp = self._read_bin(bin_fn)
-                data_tmp[:, -1] = self._normalize_intensity(data_tmp[:, -1], 40.0)
+                # data_tmp[:, -1] = self._normalize_intensity(data_tmp[:, -1], 40.0)
                 # make it [x, y, z, feature_1, feature_2]
                 # data_tmp = data_tmp[:, [1, 2, 0, 3, 4]]
                 # TODO: Check
-                ata_tmp = data_tmp[:, [1, 2, 0]]
+                data_tmp = data_tmp[:, [1, 2, 0]]
                 pcs.append(data_tmp)
                 keep_idx = int(os.path.basename(bin_fn).split('.')[0][5:]) - 1
                 keep_idxs.append(keep_idx)
