@@ -19,15 +19,15 @@ class JointAttention(nn.Module):
         super(JointAttention, self).__init__()
         self.num_joints = num_joints
         self.dim = dim
-        self.joint_emb = nn.Parameter(torch.randn(1, num_joints, dim))
+        # self.joint_emb = nn.Parameter(torch.randn(1, num_joints, dim))
         self.to_kv = nn.Linear(dim, dim*2)
 
-    def forward(self, x):
+    def forward(self, x, joint_emb):
         B, N, D = x.shape
 
         k, v = self.to_kv(x).chunk(2, dim=-1)
 
-        joint_emb = self.joint_emb.expand(B, -1, -1) # [B, J, D]
+        joint_emb = joint_emb.expand(B, -1, -1) # [B, J, D]
         attn = k @ joint_emb.transpose(1, 2) # [B, N, J]
         attn = F.softmax(attn, dim=1) # [B, N, J]
         x = attn.transpose(1, 2) @ v # [B, J, D]
@@ -42,15 +42,15 @@ class MultiHeadJointAttention(nn.Module):
         self.dim_head = dim_head
         self.scale = dim_head ** -0.5
 
-        self.joint_emb = nn.Parameter(torch.randn(1, num_joints, dim))
+        # self.joint_emb = nn.Parameter(torch.randn(1, num_joints, dim))
         self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
         self.to_out = nn.Linear(inner_dim, dim)
 
-    def forward(self, x):
+    def forward(self, x, joint_emb):
         B, N, C = x.shape
-        J = self.joint_emb.shape[1]
+        J = joint_emb.shape[1]
 
-        q = self.joint_emb.expand(B, -1, -1)
+        q = joint_emb.expand(B, -1, -1)
         q = q.reshape(B, J, self.heads, self.dim_head).permute(0, 2, 1, 3)
 
         kv = self.to_kv(x).chunk(2, dim=-1)
@@ -68,21 +68,72 @@ class MultiHeadJointAttention(nn.Module):
 class PointProposer(nn.Module):
     def __init__(self, dim, heads, dim_head, features, num_proposal):
         super().__init__()
-        
-        self.m = nn.Sequential(
-            nn.Linear(3+features, dim),
+
+        self.m1 = nn.Sequential(
+            nn.Linear(3, dim),
             nn.LayerNorm(dim),
             nn.GELU(),
-            nn.Linear(dim, dim),
-            MultiHeadJointAttention(dim=dim, heads=heads, dim_head=dim_head, num_joints=num_proposal),
-            nn.LayerNorm(dim),
-            nn.Linear(dim, dim),
-            nn.GELU(),
-            nn.Linear(dim, 3+features)
+            nn.Linear(dim, dim)
         )
 
-    def forward(self, x):
-        return self.m(x)
+        self.transformer = Transformer(dim, 4, heads, dim_head, dim*2)
+        self.attn = MultiHeadJointAttention(dim, heads, dim_head, num_proposal)
+
+        self.m2 = nn.Sequential(
+            nn.LayerNorm(dim),
+            nn.Linear(dim, dim),
+            nn.GELU(),
+            nn.Linear(dim, 3)
+        )
+
+    def forward(self, input, proposal_embed):
+        B, L, N, C = input.shape
+        input = input.reshape(B*L, N, C)
+        new_input = self.m1(input)
+        new_input = self.attn(new_input, proposal_embed)
+        new_input = self.m2(new_input)
+        input = torch.cat((input, new_input), dim=1)
+        input = input.reshape(B, L, -1, C)
+        return input
+
+# class AttentionMemoryBank(nn.Module):
+#     def __init__(self, dim, mem_size, heads, dim_head):
+#         super().__init__()
+#         self.mem = nn.Parameter(torch.FloatTensor(1, dim, mem_size).normal_(0.0, 1.0))
+
+#         inner_dim = dim_head * heads
+#         self.heads = heads
+#         self.dim_head = dim_head
+#         self.scale = dim_head ** -0.5
+
+#         # self.to_q = nn.Linear(dim, inner_dim, bias=False)
+#         # self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
+#         self.to_out = nn.Linear(inner_dim, dim)
+
+#     def forward(self, x):
+#         B, N, C = x.shape
+
+#         _, _, M = self.mem.shape
+#         m = self.mem.repeat(B, 1, 1)
+#         m = m.transpose(1, 2)
+
+#         # q = self.to_q(x)
+#         q = x
+#         q = q.reshape(B, N, self.heads, self.dim_head).permute(0, 2, 1, 3)
+
+#         k = m.reshape(B, M, self.heads, self.dim_head).permute(0, 2, 1, 3)
+#         v = k.clone()
+#         # kv = self.to_kv(m).chunk(2, dim=-1)
+#         # k, v = map(lambda t: t.reshape(B, M, self.heads, self.dim_head).permute(0, 2, 1, 3), kv)
+
+#         dots = torch.einsum('bhid,bhjd->bhij', q, k) * self.scale
+#         attn = dots.softmax(dim=-1)
+
+#         out = torch.einsum('bhij,bhjd->bhid', attn, v).reshape(B, self.heads, N, self.dim_head)
+#         out = out.permute(0, 2, 1, 3).reshape(B, N, -1)
+#         out = self.to_out(out)
+
+#         return out
 
 class AttentionMemoryBank(nn.Module):
     def __init__(self, dim, mem_size):
@@ -101,6 +152,7 @@ class AttentionMemoryBank(nn.Module):
         x_new_ = x_new.permute(0, 2, 1)
 
         return x_new_
+    
     
 class Model(nn.Module):
     def __init__(self, radius, nsamples, spatial_stride,                                # P4DConv: spatial
@@ -169,7 +221,7 @@ class Model(nn.Module):
 
         return output
 
-class P4TransformerDA8(nn.Module):
+class P4TransformerDA9(nn.Module):
     def __init__(self, radius, nsamples, spatial_stride,                                # P4DConv: spatial
                  temporal_kernel_size, temporal_stride,                                 # P4DConv: temporal
                  emb_relu,                                                              # embedding: relu
@@ -177,6 +229,11 @@ class P4TransformerDA8(nn.Module):
                  dim_proposal, heads_proposal, dim_head_proposal,
                  mlp_dim, num_joints=13, features=3, num_proposal=16, mem_size=1024):   # output
         super().__init__()
+
+        self.point_proposer = PointProposer(dim_proposal, heads_proposal, dim_head_proposal, features, num_proposal)
+
+        self.proposal_embed_s = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
+        self.proposal_embed_t = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
 
         self.model_s = Model(radius, nsamples, spatial_stride, temporal_kernel_size, temporal_stride, 
                              emb_relu, dim, depth, heads, dim_head, dim_proposal, heads_proposal, 
@@ -196,6 +253,7 @@ class P4TransformerDA8(nn.Module):
             return self.forward_train(input)
         
     def forward_inference(self, input):
+        input = self.point_proposer(input[:,:,:,:3], self.proposal_embed_t)
         embedding = self.model_s.encode(input)
         output0 = self.model_s.transformer(embedding)
         output = self.model_t.mem(output0) # [B, L*n, C]
@@ -204,6 +262,8 @@ class P4TransformerDA8(nn.Module):
         
     def forward_train(self, input):
         input_s, input_t = input
+        input_s = self.point_proposer(input_s[:,:,:,:3], self.proposal_embed_s)
+        input_t = self.point_proposer(input_t[:,:,:,:3], self.proposal_embed_t)
 
         self.model_s.mem.requires_grad_(True)
         self.model_t.mem.requires_grad_(True)
@@ -211,14 +271,14 @@ class P4TransformerDA8(nn.Module):
         output0_s = self.model_s.transformer(embedding_s)
         output0_s2 = output0_s.clone()
         mem_s = self.model_s.mem(output0_s) # [B, L*n, C]
-        l_rec_s = F.mse_loss(mem_s, output0_s)
+        l_rec_s = F.mse_loss(mem_s[:, :output0_s.shape[1], :], output0_s)
         output_s = self.model_s.decode(mem_s)
 
         embedding_t = self.model_s.encode(input_t)
-        output0_t = self.model_t.transformer(embedding_t)
+        output0_t = self.model_s.transformer(embedding_t)
         output0_t2 = output0_t.clone()
         output_t = self.model_t.mem(output0_t) # [B, L*n, C]
-        l_rec_t = F.mse_loss(output_t, output0_t)
+        l_rec_t = F.mse_loss(output_t[:, :output0_t.shape[1], :], output0_t)
         output_t = self.model_t.decode(output_t)
 
         self.model_s.mem.requires_grad_(False)

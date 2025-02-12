@@ -1,5 +1,4 @@
 import torch
-from torch.utils.data import Dataset
 import pickle
 import random
 import numpy as np
@@ -9,10 +8,10 @@ from itertools import chain
 from dataset.temporal_dataset import TemporalDataset
 
 class ReferenceDataset(TemporalDataset):
-    def __init__(self, data_path, ref_data_path, transform=None, ref_transform=None, split='train', ref_split='train'):
+    def __init__(self, data_path, ref_data_path, transform=None, split='train', ref_split='train'):
         super().__init__(data_path, transform, split)
         self.ref_data_path = ref_data_path
-        self.ref_transform = ref_transform
+        self.ref_transform = deepcopy(transform)
 
         with open(ref_data_path, 'rb') as f:
             self.ref_all_data = pickle.load(f)
@@ -37,6 +36,7 @@ class ReferenceDataset(TemporalDataset):
             ref_seq_idx += 1
         ref_sample = deepcopy(self.ref_data[ref_seq_idx])
 
+        ref_sample['skeleton_type'] = self.ref_data_path.split('/')[-1].split('.')[0]
         ref_sample['index'] = ref_idx
         ref_sample['centroid'] = np.array([0.,0.,0.])
         ref_sample['radius'] = 1.

@@ -1,7 +1,4 @@
-# try:
-#     from pyskl.utils.graph import Graph, get_hop_distance
-# except ImportError:
-#     print("Please install the package 'pyskl' to use graph related functions.")
+import numpy as np
 
 def get_flip_indices(num_joints, left_indices, right_indices):
     flip_indices = []
@@ -100,6 +97,26 @@ class MMFiSkeleton:
     left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
     center = 0
 
+class SMPLSkeleton:
+    joint_names = [
+        "pelvis", "left_hip", "right_hip", "spine1", "left_knee", "right_knee", "spine2", "left_ankle", 
+        "right_ankle", "spine3", "left_foot", "right_foot", "neck", "left_collar", "right_collar", "head", 
+        "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", 
+        "left_hand", "right_hand"
+    ]
+    bones = [
+        [0, 1], [0, 2], [0, 3], [1, 4], [2, 5], [3, 6], [4, 7], [5, 8], [6, 9], [7, 10], [8, 11],
+        [9, 12], [9, 13], [9, 14], [12, 15], [13, 16], [14, 17], [16, 18], [17, 19], [18, 20], [19, 21],
+        [20, 22], [21, 23]
+    ]
+    left_indices = [1, 4, 7, 10, 13, 16, 18, 20, 22]
+    right_indices = [2, 5, 8, 11, 14, 17, 19, 21, 23]
+        
+    num_joints = len(joint_names)
+    flip_indices = get_flip_indices(num_joints, left_indices, right_indices)
+    left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
+    center = 0
+
 def coco2simplecoco(joints):
     return joints[..., [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], :]
 
@@ -108,6 +125,41 @@ def mmbody2simplecoco(joints):
 
 def mmfi2simplecoco(joints):
     return joints[..., [9, 14, 11, 15, 12, 16, 13, 1, 4, 2, 5, 3, 6], :]
+
+def simplecoco2smpl(joints):
+    def _j(indices):
+        return joints[..., indices, :]
+    def _len(j0, j1):
+        return np.linalg.norm(j0 - j1, axis=-1, keepdims=True)
+
+    neck = ((_j(1) + _j(2)) / 2 + _j(0)) / 2
+    hip_center = (_j(7) + _j(8)) / 2 
+    d_spine = neck - hip_center
+    d_spine = d_spine / _len(hip_center, neck)
+    pelvis = hip_center + d_spine * _len(_j(7), _j(8))
+    spine2 = (pelvis + neck) / 2
+    spine1 = (pelvis + spine2) / 2
+    spine3 = neck * 0.2 + spine2 * 0.8
+    spine_pseudo = (neck + spine2) / 2
+    left_collar = (_j(1) + spine_pseudo) / 2
+    right_collar = (_j(2) + spine_pseudo) / 2
+    d_lhand = _j(5) - _j(3)
+    d_lhand = d_lhand / _len(_j(3), _j(5))
+    left_hand = _j(5) + d_lhand * _len(_j(5), _j(3)) * 0.25
+    d_rhand = _j(6) - _j(4)
+    d_rhand = d_rhand / _len(_j(4), _j(6))
+    right_hand = _j(6) + d_rhand * _len(_j(6), _j(4)) * 0.25
+    d_lfoot = (_j(2) - _j(1)) @ (_j(11) - _j(9))
+    d_lfoot = d_lfoot / np.linalg.norm(d_lfoot, axis=-1, keepdims=True)
+    left_foot = _j(11) + d_lfoot * _len(_j(11), _j(9)) * 0.25
+    d_rfoot = (_j(1) - _j(2)) @ (_j(10) - _j(12))
+    d_rfoot = d_rfoot / np.linalg.norm(d_rfoot, axis=-1, keepdims=True)
+    right_foot = _j(10) + d_rfoot * _len(_j(10), _j(12)) * 0.25
+
+    return np.stack([pelvis, _j(7), _j(8), spine1, _j(9), _j(10), spine2, 
+                           _j(11), _j(12), spine3, left_foot, right_foot, neck,
+                            left_collar, right_collar, _j(0), _j(1), _j(2), _j(3),
+                            _j(4), _j(5), _j(6), left_hand, right_hand], axis=-2)
 
 # class MMWaveGraph(Graph):
 #     def __init__(self,

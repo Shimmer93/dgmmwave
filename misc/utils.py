@@ -1,5 +1,6 @@
 import yaml
 from argparse import Namespace
+import sys
 
 def load_cfg(cfg):
     hyp = None
@@ -18,3 +19,6 @@ def merge_args_cfg(args, cfg):
 
 def torch2numpy(tensor):
     return tensor.detach().cpu().numpy()
+
+def import_with_str(module, name):
+    return getattr(sys.modules[module], name)

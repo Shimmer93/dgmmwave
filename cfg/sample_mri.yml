@@ -10,7 +10,7 @@ epochs: 100
 # --------------------------------------
 data_pkl: mri.pkl
 dataset_name: temporal
-train_split: val_s1_p1
+train_split: [train_s1_p1, val_s1_p1]
 val_split: test_s1_p1
 test_split: test_s1_p1
 # --------------------------------------

@@ -1,9 +1,4 @@
 import torch
-from torch.utils.data import Dataset
-import pickle
-import random
-import numpy as np
-from copy import deepcopy
 
 from dataset.temporal_dataset import TemporalDataset
 

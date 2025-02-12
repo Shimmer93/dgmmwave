@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-from scipy import stats
 from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
@@ -293,23 +292,18 @@ class Flip():
         return sample
     
 class ToSimpleCOCO():
-    def __init__(self, skeleton_type='mmbody'):
-        self.skeleton_type = skeleton_type
-        if skeleton_type not in ['mmbody', 'coco', 'mmfi']:
-            raise ValueError('skeleton_type must be "mmbody", "coco" or "mmfi"')
-        
     def __call__(self, sample):
-        if self.skeleton_type == 'mmbody':
+        if sample['skeleton_type'] == 'mmbody':
             if isinstance(sample['keypoints'], list):
                 sample['keypoints'] = [mmbody2simplecoco(kp) for kp in sample['keypoints']]
             else:
                 sample['keypoints'] = mmbody2simplecoco(sample['keypoints'])
-        elif self.skeleton_type == 'coco':
+        elif sample['skeleton_type'] == 'mri':
             if isinstance(sample['keypoints'], list):
                 sample['keypoints'] = [coco2simplecoco(kp) for kp in sample['keypoints']]
             else:
                 sample['keypoints'] = coco2simplecoco(sample['keypoints'])
-        elif self.skeleton_type == 'mmfi':
+        elif sample['skeleton_type'] == 'mmfi':
             if isinstance(sample['keypoints'], list):
                 sample['keypoints'] = [mmfi2simplecoco(kp) for kp in sample['keypoints']]
             else:
@@ -370,140 +364,13 @@ class RandomApply():
         return sample
 
 class ComposeTransform():
-    def __init__(self, hparams, transforms):
-        self.hparams = hparams
+    def __init__(self, transforms):
         self.transforms = transforms
 
     def __call__(self, sample):
         for t in self.transforms:
             sample = t(sample)
         return sample
-
-class TrainTransform(ComposeTransform):
-    def __init__(self, hparams):
-        tsfms = []
-        tsfms.append(UniformSample(hparams.clip_len))
-        tsfms.append(GetCentroidRadius(hparams.centroid_type))
-        if hparams.to_simple_coco:
-            tsfms.append(ToSimpleCOCO(hparams.skeleton_type))
-        if hparams.multi_frame:
-            tsfms.append(MultiFrameAggregate(hparams.num_frames))
-        if hparams.remove_outliers:
-            tsfms.append(RemoveOutliers(hparams.outlier_type, hparams.num_neighbors, hparams.std_multiplier, hparams.radius, hparams.min_neighbors))
-        if hparams.random_jitter:
-            tsfms.append(RandomApply([RandomJitter(hparams.jitter_std)], prob=hparams.jitter_prob))
-        if hparams.flip:
-            tsfms.append(RandomApply([Flip(hparams.left_idxs, hparams.right_idxs)], prob=hparams.flip_prob))
-        if hparams.normalize:
-            tsfms.append(Normalize(hparams.feat_scale))
-        if hparams.random_scale:
-            tsfms.append(RandomApply([RandomScale(hparams.scale_min, hparams.scale_max)], prob=hparams.scale_prob))
-        if hparams.random_rotate:
-            tsfms.append(RandomApply([RandomRotate(hparams.angle_min, hparams.angle_max)], prob=hparams.rotate_prob))
-        if hparams.random_translate:
-            tsfms.append(RandomApply([RandomTranslate(hparams.translate_range)], prob=hparams.translate_prob))
-        if hparams.gen_seg_gt:
-            tsfms.append(GenerateSegmentationGroundTruth())
-        if hparams.reduce_keypoint_len:
-            tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
-        if hparams.pad:
-            tsfms.append(Pad(hparams.max_len))
-        tsfms.append(ToTensor())
-
-        super().__init__(hparams, tsfms)
-
-class PosNegTransform():
-    def __init__(self, transform_obj: ComposeTransform, hparams):
-        tsfms = []
-        for t in transform_obj.transforms:
-            if t.__class__.__name__ not in ['ReduceKeypointLen', 'Pad', 'ToTensor']:
-                tsfms.append(t)
-        self.transforms_both = tsfms
-
-        self.transforms_pos = []
-        if hparams.reduce_keypoint_len:
-            self.transforms_pos.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
-        if hparams.pad:
-            self.transforms_pos.append(Pad(hparams.max_len))
-        self.transforms_pos.append(ToTensor())
-
-        self.transforms_neg = []
-        self.transforms_neg.append(RandomJitter(hparams.jitter_std_neg))
-        self.transforms_neg.append(RandomApply([DropAroundPoint(hparams.drop_radius)], prob=hparams.drop_prob))
-        self.transforms_neg.append(RandomApply([AddAroundPoint(hparams.add_radius, hparams.num_add_points)], prob=hparams.add_prob))
-        if hparams.reduce_keypoint_len:
-            self.transforms_neg.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
-        if hparams.pad:
-            self.transforms_neg.append(Pad(hparams.max_len))
-        self.transforms_neg.append(ToTensor())
-
-    def __call__(self, sample):
-        for t in self.transforms_both:
-            sample = t(sample)
-        sample_pos = sample.copy()
-        sample_neg = sample.copy()
-        for t in self.transforms_pos:
-            sample_pos = t(sample_pos)
-        for t in self.transforms_neg:
-            sample_neg = t(sample_neg)
-        return sample_pos, sample_neg
-
-class RefTransform(ComposeTransform):
-    def __init__(self, hparams):
-        tsfms = []
-        tsfms.append(UniformSample(hparams.clip_len))
-        tsfms.append(GetCentroidRadius(hparams.centroid_type))
-        if hparams.to_simple_coco:
-            tsfms.append(ToSimpleCOCO(hparams.ref_skeleton_type))
-        if hparams.multi_frame:
-            tsfms.append(MultiFrameAggregate(hparams.num_frames))
-        if hparams.remove_outliers:
-            tsfms.append(RemoveOutliers(hparams.outlier_type, hparams.num_neighbors, hparams.std_multiplier, hparams.radius, hparams.min_neighbors))
-        if hparams.random_jitter:
-            tsfms.append(RandomApply([RandomJitter(hparams.jitter_std)], prob=hparams.jitter_prob))
-        if hparams.flip:
-            tsfms.append(RandomApply([Flip(hparams.left_idxs, hparams.right_idxs)], prob=hparams.flip_prob))
-        if hparams.normalize:
-            tsfms.append(Normalize(hparams.feat_scale))
-        if hparams.random_scale:
-            tsfms.append(RandomApply([RandomScale(hparams.scale_min, hparams.scale_max)], prob=hparams.scale_prob))
-        if hparams.random_rotate:
-            tsfms.append(RandomApply([RandomRotate(hparams.angle_min, hparams.angle_max)], prob=hparams.rotate_prob))
-        if hparams.random_translate:
-            tsfms.append(RandomApply([RandomTranslate(hparams.translate_range)], prob=hparams.translate_prob))
-        if hparams.gen_seg_gt:
-            tsfms.append(GenerateSegmentationGroundTruth())
-        if hparams.reduce_keypoint_len:
-            tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
-        if hparams.pad:
-            tsfms.append(Pad(hparams.max_len))
-        tsfms.append(ToTensor())
-
-        super().__init__(hparams, tsfms)
-    
-class ValTransform(ComposeTransform):
-    def __init__(self, hparams):
-        tsfms = []
-        tsfms.append(UniformSample(hparams.clip_len))
-        tsfms.append(GetCentroidRadius(hparams.centroid_type))
-        if hparams.to_simple_coco:
-            skeleton_type = hparams.val_skeleton_type if hasattr(hparams, 'val_skeleton_type') else hparams.skeleton_type
-            tsfms.append(ToSimpleCOCO(skeleton_type))
-        if hparams.multi_frame:
-            tsfms.append(MultiFrameAggregate(hparams.num_frames))
-        if hparams.remove_outliers:
-            tsfms.append(RemoveOutliers(hparams.outlier_type, hparams.num_neighbors, hparams.std_multiplier, hparams.radius, hparams.min_neighbors))
-        if hparams.normalize:
-            tsfms.append(Normalize())
-        if hparams.gen_seg_gt:
-            tsfms.append(GenerateSegmentationGroundTruth())
-        if hparams.reduce_keypoint_len:
-            tsfms.append(ReduceKeypointLen(hparams.only_one, hparams.keep_type, hparams.frame_to_reduce))
-        if hparams.pad:
-            tsfms.append(Pad(hparams.max_len))
-        tsfms.append(ToTensor())
-
-        super().__init__(hparams, tsfms)
 
 if __name__ == '__main__':
     class hparams:

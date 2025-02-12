@@ -47,7 +47,7 @@ dim_head: 128
 mlp_dim: 2048
 output_dim: 39
 mem_size: 128
-features: 2
+features: 3
 dim_proposal: 64
 heads_proposal: 4
 dim_head_proposal: 16
