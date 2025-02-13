@@ -34,8 +34,8 @@ class JointAttention(nn.Module):
 
         return x
     
-class MultiHeadJointAttention(nn.Module):
-    def __init__(self, dim, heads, dim_head, num_joints=13):
+class PointAttention(nn.Module):
+    def __init__(self, dim, heads, dim_head):
         super().__init__()
         inner_dim = dim_head * heads
         self.heads = heads
@@ -65,7 +65,7 @@ class MultiHeadJointAttention(nn.Module):
 
         return out
 
-class PointProposer(nn.Module):
+class PointTransformer(nn.Module):
     def __init__(self, dim, heads, dim_head, features, num_proposal):
         super().__init__()
 
@@ -77,7 +77,8 @@ class PointProposer(nn.Module):
         )
 
         # self.transformer = Transformer(dim, 4, heads, dim_head, dim*2)
-        self.attn = MultiHeadJointAttention(dim, heads, dim_head, num_proposal)
+        self.attn_inner = Attention(dim, heads, dim_head)
+        self.attn_outer = PointAttention(dim, heads, dim_head)
 
         self.m2 = nn.Sequential(
             nn.LayerNorm(dim),
@@ -86,13 +87,28 @@ class PointProposer(nn.Module):
             nn.Linear(dim, 3)
         )
 
+        self.conf = nn.Sequential(
+            nn.LayerNorm(dim * 2),
+            nn.Linear(dim*2, dim),
+            nn.GELU(),
+            nn.Linear(dim, 1),
+            nn.Sigmoid()
+        )
+
     def forward(self, input, proposal_embed):
         B, L, N, C = input.shape
         input = input.reshape(B*L, N, C)
         new_input = self.m1(input)
-        new_input = self.attn(new_input, proposal_embed)
-        new_input = self.m2(new_input)
-        input = torch.cat((input, new_input), dim=1)
+        input_outer = self.attn_outer(new_input, proposal_embed)
+        input_inner = self.attn_inner(new_input)
+        new_input = torch.cat([input_outer, input_inner], dim=-1)
+        conf = self.conf(new_input)
+        if self.training:
+            input = conf * input_outer + (1 - conf) * input_inner
+        else:
+            conf = conf > 0.5
+            input = conf * input_outer + (1 - conf) * input_inner
+        input = self.m2(input)
         input = input.reshape(B, L, -1, C)
         return input
 
@@ -221,7 +237,7 @@ class Model(nn.Module):
 
         return output
 
-class P4TransformerDA9(nn.Module):
+class P4TransformerDA10(nn.Module):
     def __init__(self, radius, nsamples, spatial_stride,                                # P4DConv: spatial
                  temporal_kernel_size, temporal_stride,                                 # P4DConv: temporal
                  emb_relu,                                                              # embedding: relu
@@ -230,7 +246,7 @@ class P4TransformerDA9(nn.Module):
                  mlp_dim, num_joints=13, features=3, num_proposal=16, mem_size=1024):   # output
         super().__init__()
 
-        self.point_proposer = PointProposer(dim_proposal, heads_proposal, dim_head_proposal, features, num_proposal)
+        self.point_proposer = PointTransformer(dim_proposal, heads_proposal, dim_head_proposal, features, num_proposal)
 
         self.proposal_embed_s = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
         self.proposal_embed_t = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
