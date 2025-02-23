@@ -45,7 +45,7 @@ sched_params:
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: P4TransformerDA10
+model_name: P4TransformerDA8
 model_params:
   radius: 2.0
   nsamples: 32
@@ -58,22 +58,21 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
-  mem_size: 128
+  mem_size: 32
   features: 3
   dim_proposal: 64
   heads_proposal: 4
   dim_head_proposal: 16
   num_joints: 13 
-  num_proposal: 256
+  num_proposal: 8
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
 loss_name: MSELoss
 loss_params: null
 # weight for auxiliary losses
-w_prec: 0.001
-w_rec: 0.0001
-w_mem: 0.01
+w_rec: 0.001
+w_mem: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -117,7 +116,7 @@ train_pipeline:
     prob: 0.5
   - name: RandomTranslate
     params:
-      translate_range: 0.01
+      translate_range: 0.05
     prob: 0.5
   - name: ReduceKeypointLen
     params:

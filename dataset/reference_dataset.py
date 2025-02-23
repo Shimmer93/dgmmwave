@@ -36,7 +36,7 @@ class ReferenceDataset(TemporalDataset):
             ref_seq_idx += 1
         ref_sample = deepcopy(self.ref_data[ref_seq_idx])
 
-        ref_sample['skeleton_type'] = self.ref_data_path.split('/')[-1].split('.')[0]
+        ref_sample['skeleton_type'] = self.ref_data_path.split('/')[-1].split('.')[0].split('_')[0]
         ref_sample['index'] = ref_idx
         ref_sample['centroid'] = np.array([0.,0.,0.])
         ref_sample['radius'] = 1.

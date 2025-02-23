@@ -9,21 +9,19 @@ epochs: &epochs 100
 # Dataset parameters
 # --------------------------------------
 train_dataset:
-  name: ReferenceDataset
+  name: TemporalDataset
   params:
-    data_path: &data_path data/mmfi.pkl
-    split: val_rdn_p3
-    ref_data_path: data/mri.pkl
-    ref_split: val_s1_p1
+    data_path: &data_path data/mri.pkl
+    split: val_s1_p1
 val_dataset:
   name: TemporalDataset
   params:
     data_path: *data_path
-    split: test_rdn_p3
+    split: test_s1_p1
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mri.pkl
+    data_path: *data_path
     split: test_s1_p1
 # --------------------------------------
 # Optimizer parameters
@@ -45,35 +43,27 @@ sched_params:
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: P4TransformerDA10
+model_name: SPiKE
 model_params:
-  radius: 2.0
+  radius: 0.2
   nsamples: 32
-  spatial_stride: 8
-  temporal_kernel_size: 3
-  temporal_stride: 1
-  emb_relu: false
+  spatial_stride: 32
   dim: 1024
   depth: 5
   heads: 8
-  dim_head: 128
+  dim_head: 256
   mlp_dim: 2048
-  mem_size: 128
-  features: 3
-  dim_proposal: 64
-  heads_proposal: 4
-  dim_head_proposal: 16
-  num_joints: 13 
-  num_proposal: 256
+  num_coord_joints: 39
+  dropout1: 0.0
+  dropout2: 0.0
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
 loss_name: MSELoss
 loss_params: null
 # weight for auxiliary losses
-w_prec: 0.001
-w_rec: 0.0001
-w_mem: 0.01
+w_rec: 0.001
+w_mem: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -99,8 +89,8 @@ train_pipeline:
     prob: 0.5
   # - name: Flip
   #   params:
-  #     left_idxs: [5,6,7,11,12,13,15,17]
-  #     right_idxs: [2,3,4,8,9,10,14,16]
+  #     left_idxs: [5: 6: 7: 11: 12: 13: 15: 17]
+  #     right_idxs: [2: 3: 4: 8: 9: 10: 14: 16]
     prob: 0.5
   - name: Normalize
     params:

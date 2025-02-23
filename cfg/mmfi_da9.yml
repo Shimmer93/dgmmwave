@@ -23,8 +23,8 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: *data_path
-    split: test_rdn_p3
+    data_path: data/mri.pkl
+    split: test_s1_p1
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -58,7 +58,7 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
-  mem_size: 128
+  mem_size: 32
   features: 3
   dim_proposal: 64
   heads_proposal: 4
@@ -116,7 +116,7 @@ train_pipeline:
     prob: 0.5
   - name: RandomTranslate
     params:
-      translate_range: 0.01
+      translate_range: 0.05
     prob: 0.5
   - name: ReduceKeypointLen
     params:
