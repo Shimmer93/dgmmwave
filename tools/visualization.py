@@ -107,6 +107,8 @@ def main(args):
             'kps': kps_pred
         }
 
+    if args.clips[-1] == -1:
+        args.clips[-1] = len(data_dict['GT']['pcs'])
     clips = [(args.clips[i], args.clips[i + 1]) for i in range(0, len(args.clips), 2)]
 
     for clip in tqdm(clips, desc='Clip'):
