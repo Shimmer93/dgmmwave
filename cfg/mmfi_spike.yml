@@ -9,12 +9,10 @@ epochs: &epochs 100
 # Dataset parameters
 # --------------------------------------
 train_dataset:
-  name: ReferenceDataset
+  name: TemporalDataset
   params:
     data_path: &data_path data/mmfi.pkl
-    split: val_rdn_p3
-    ref_data_path: data/mri.pkl
-    ref_split: val_s1_p1
+    split: [train_rdn_p3, val_rdn_p3]
 val_dataset:
   name: TemporalDataset
   params:
@@ -30,7 +28,7 @@ test_dataset:
 # --------------------------------------
 optim_name: AdamW
 optim_params:
-  lr: 0.0001
+  lr: 0.00001
   weight_decay: 0.00001
 # --------------------------------------
 # Learning rate scheduler parameters
@@ -39,8 +37,8 @@ sched_name: LinearWarmupCosineAnnealingLR
 sched_params:
   warmup_epochs: 20
   max_epochs: *epochs
-  warmup_start_lr: 0.00001
-  eta_min: 0.00001
+  warmup_start_lr: 0.000001
+  eta_min: 0.000001
 # --------------------------------------
 # Model parameters
 # --------------------------------------
@@ -91,8 +89,8 @@ train_pipeline:
     prob: 0.5
   # - name: Flip
   #   params:
-  #     left_idxs: [5: 6: 7: 11: 12: 13: 15: 17]
-  #     right_idxs: [2: 3: 4: 8: 9: 10: 14: 16]
+  #     left_idxs: [5,6,7,11,12,13,15,17]
+  #     right_idxs: [2,3,4,8,9,10,14,16]
     prob: 0.5
   - name: Normalize
     params:
@@ -118,7 +116,7 @@ train_pipeline:
       frame_to_reduce: 0
   - name: Pad
     params:
-      max_len: 256
+      max_len: 1024
   - name: ToTensor
     params: null
 val_pipeline: &val_pipeline
@@ -147,7 +145,7 @@ val_pipeline: &val_pipeline
       frame_to_reduce: 0
   - name: Pad
     params:
-      max_len: 256
+      max_len: 1024
   - name: ToTensor
     params: null
 test_pipeline: *val_pipeline

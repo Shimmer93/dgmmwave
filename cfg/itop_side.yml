@@ -9,28 +9,26 @@ epochs: &epochs 100
 # Dataset parameters
 # --------------------------------------
 train_dataset:
-  name: ReferenceDataset
+  name: TemporalDataset
   params:
-    data_path: &data_path data/mri.pkl
-    split: train_s1_p1
-    ref_data_path: data/mmfi.pkl
-    ref_split: train_rdn_p3
+    data_path: &data_path data/itop_side.pkl
+    split: [train, val]
 val_dataset:
   name: TemporalDataset
   params:
     data_path: *data_path
-    split: val_s1_p1
+    split: test
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmfi.pkl
-    split: test_rdn_p3
+    data_path: data/itop_side.pkl
+    split: test
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
 optim_name: AdamW
 optim_params:
-  lr: 0.0001
+  lr: 0.00001
   weight_decay: 0.00001
 # --------------------------------------
 # Learning rate scheduler parameters
@@ -39,13 +37,13 @@ sched_name: LinearWarmupCosineAnnealingLR
 sched_params:
   warmup_epochs: 20
   max_epochs: *epochs
-  warmup_start_lr: 0.00001
-  eta_min: 0.00001
+  warmup_start_lr: 0.000001
+  eta_min: 0.000001
 # --------------------------------------
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: P4TransformerDA9
+model_name: P4Transformer
 model_params:
   radius: 0.7
   nsamples: 32
@@ -58,13 +56,8 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
-  mem_size: 1024
+  output_dim: 39
   features: 3
-  dim_proposal: 64
-  heads_proposal: 4
-  dim_head_proposal: 16
-  num_joints: 13 
-  num_proposal: 32
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -79,15 +72,12 @@ w_mem: 0.001
 train_pipeline:
   - name: UniformSample
     params: 
-      clip_len: 7
+      clip_len: 5
   - name: GetCentroidRadius
     params: 
-      centroid_type: 'dataset_median'
+      centroid_type: 'zonly'
   - name: ToSimpleCOCO
     params: null
-  - name: MultiFrameAggregate
-    params:
-      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
@@ -111,13 +101,12 @@ train_pipeline:
     prob: 0.5
   - name: RandomRotate
     params:
-      angle_min: -10
-      angle_max: 10
-      deg: true
+      angle_min: -0.3141592653589793
+      angle_max: 0.3141592653589793
     prob: 0.5
   - name: RandomTranslate
     params:
-      translate_range: 0.05
+      translate_range: 0.01
     prob: 0.5
   - name: ReduceKeypointLen
     params:
@@ -132,15 +121,12 @@ train_pipeline:
 val_pipeline: &val_pipeline
   - name: UniformSample
     params: 
-      clip_len: 7
+      clip_len: 5
   - name: GetCentroidRadius
     params: 
-      centroid_type: 'dataset_median'
+      centroid_type: 'zonly'
   - name: ToSimpleCOCO
     params: null
-  - name: MultiFrameAggregate
-    params:
-      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'

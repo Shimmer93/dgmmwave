@@ -11,24 +11,24 @@ epochs: &epochs 100
 train_dataset:
   name: TemporalDataset
   params:
-    data_path: &data_path data/mri.pkl
-    split: val_s1_p1
+    data_path: &data_path data/itop_top.pkl
+    split: [train, val]
 val_dataset:
   name: TemporalDataset
   params:
     data_path: *data_path
-    split: test_s1_p1
+    split: test
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: *data_path
-    split: test_s1_p1
+    data_path: data/itop_top.pkl
+    split: test
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
 optim_name: AdamW
 optim_params:
-  lr: 0.0001
+  lr: 0.00001
   weight_decay: 0.00001
 # --------------------------------------
 # Learning rate scheduler parameters
@@ -37,25 +37,27 @@ sched_name: LinearWarmupCosineAnnealingLR
 sched_params:
   warmup_epochs: 20
   max_epochs: *epochs
-  warmup_start_lr: 0.00001
-  eta_min: 0.00001
+  warmup_start_lr: 0.000001
+  eta_min: 0.000001
 # --------------------------------------
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: SPiKE
+model_name: P4Transformer
 model_params:
-  radius: 0.2
+  radius: 0.7
   nsamples: 32
-  spatial_stride: 32
+  spatial_stride: 8
+  temporal_kernel_size: 3
+  temporal_stride: 1
+  emb_relu: false
   dim: 1024
   depth: 5
   heads: 8
-  dim_head: 256
+  dim_head: 128
   mlp_dim: 2048
-  num_coord_joints: 39
-  dropout1: 0.0
-  dropout2: 0.0
+  output_dim: 39
+  features: 3
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -70,15 +72,12 @@ w_mem: 0.001
 train_pipeline:
   - name: UniformSample
     params: 
-      clip_len: 7
+      clip_len: 5
   - name: GetCentroidRadius
     params: 
       centroid_type: 'zonly'
   - name: ToSimpleCOCO
     params: null
-  - name: MultiFrameAggregate
-    params:
-      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
@@ -89,8 +88,8 @@ train_pipeline:
     prob: 0.5
   # - name: Flip
   #   params:
-  #     left_idxs: [5: 6: 7: 11: 12: 13: 15: 17]
-  #     right_idxs: [2: 3: 4: 8: 9: 10: 14: 16]
+  #     left_idxs: [5,6,7,11,12,13,15,17]
+  #     right_idxs: [2,3,4,8,9,10,14,16]
     prob: 0.5
   - name: Normalize
     params:
@@ -116,21 +115,18 @@ train_pipeline:
       frame_to_reduce: 0
   - name: Pad
     params:
-      max_len: 256
+      max_len: 1024
   - name: ToTensor
     params: null
 val_pipeline: &val_pipeline
   - name: UniformSample
     params: 
-      clip_len: 7
+      clip_len: 5
   - name: GetCentroidRadius
     params: 
       centroid_type: 'zonly'
   - name: ToSimpleCOCO
     params: null
-  - name: MultiFrameAggregate
-    params:
-      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
@@ -145,7 +141,7 @@ val_pipeline: &val_pipeline
       frame_to_reduce: 0
   - name: Pad
     params:
-      max_len: 256
+      max_len: 1024
   - name: ToTensor
     params: null
 test_pipeline: *val_pipeline
