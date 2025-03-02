@@ -73,9 +73,12 @@ train_pipeline:
   - name: UniformSample
     params: 
       clip_len: 7
-  - name: GetCentroidRadius
+  - name: GetCentroid
     params: 
-      centroid_type: 'zonly'
+      centroid_type: 'dataset_median'
+  - name: Normalize
+    params:
+      feat_scale: null
   - name: ToSimpleCOCO
     params: null
   - name: MultiFrameAggregate
@@ -84,19 +87,29 @@ train_pipeline:
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
-      radius: 2.0
+      radius: 1.5
+  - name: AddNoisyPoints
+    params:
+      add_std: 0.2
+      num_added: 32
+      zero_centered: false
+    prob: 0.5
+  - name: AddPointsAroundJoint
+    params:
+      add_std: 0.2
+      max_num2add: 3
+      num_added: 32
+    prob: 0.5
+  - name: GenerateSegmentationGroundTruth
+    params: null
+  - name: DropPointsAtSegmentedJoints
+    params:
+      max_num2drop: 6
+    prob: 0.5
   - name: RandomJitter
     params:
       jitter_std: 0.001
     prob: 0.5
-  # - name: Flip
-  #   params:
-  #     left_idxs: [5,6,7,11,12,13,15,17]
-  #     right_idxs: [2,3,4,8,9,10,14,16]
-    prob: 0.5
-  - name: Normalize
-    params:
-      feat_scale: null
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -125,9 +138,9 @@ val_pipeline: &val_pipeline
   - name: UniformSample
     params: 
       clip_len: 7
-  - name: GetCentroidRadius
+  - name: GetCentroid
     params: 
-      centroid_type: 'zonly'
+      centroid_type: 'dataset_median'
   - name: ToSimpleCOCO
     params: null
   - name: MultiFrameAggregate

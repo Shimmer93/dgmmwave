@@ -11,24 +11,79 @@ def log(x):
     with open('log.txt', 'a') as f:
         f.write(str(x) + '\n')
 
-class GenerateSegmentationGroundTruth():
-    def __init__(self):
-        pass
+class AddNoisyPoints():
+    def __init__(self, add_std=0.01, num_added=32, zero_centered=True):
+        self.add_std = add_std
+        self.num_added = num_added
+        self.zero_centered = zero_centered
 
     def __call__(self, sample):
-        new_pcs = []
+        for i in range(len(sample['point_clouds'])):
+            if self.zero_centered:
+                noise = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][i].shape[1]))
+            else:
+                noise_center = np.random.uniform(-1, 1, sample['point_clouds'][i].shape[1])
+                noise = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][i].shape[1])) + noise_center
+            sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i], noise], axis=0)
+        return sample
+
+class GenerateSegmentationGroundTruth():
+    def __call__(self, sample):
+        segs = []
         for i in range(len(sample['keypoints'])):
             neighbors = NearestNeighbors(n_neighbors=1).fit(sample['keypoints'][i])
             _, indices = neighbors.kneighbors(sample['point_clouds'][i][...,:3])
-            new_pcs.append(np.concatenate([sample['point_clouds'][i], indices], axis=-1))
-        # try:
-        #     sample['point_clouds'] = np.stack(new_pcs, axis=0)
-        # except:
-        #     for i in range(len(new_pcs)):
-        #         print(new_pcs[i].shape)
-        #     raise ValueError('Error in GenerateSegmentationGroundTruth')
-        sample['point_clouds'] = new_pcs
+            segs.append(indices)
 
+        sample['segmentations'] = segs
+        return sample
+
+class DropPointsAtSegmentedJoints():
+    def __init__(self, max_num2drop=3):
+        self.max_num2drop = max_num2drop
+
+    def __call__(self, sample):
+        assert 'segmentations' in sample
+        num_joints = sample['keypoints'][0].shape[0]
+        num2drop = np.random.randint(1, self.max_num2drop)
+        idxs2drop = np.random.choice(num_joints, num2drop, replace=False)
+
+        new_pcs = []
+        for i in range(len(sample['keypoints'])):
+            pc = sample['point_clouds'][i]
+            seg = sample['segmentations'][i]
+            mask = np.isin(seg, idxs2drop)[:, 0]
+            # with open('emm.txt', 'a') as f:
+            #     f.write(f'{mask.shape}, {pc.shape}')
+            new_pcs.append(pc[~mask, :] if np.any(~mask) else pc)
+
+        sample['point_clouds'] = new_pcs
+        return sample
+    
+class AddPointsAroundJoint():
+    def __init__(self, add_std=0.1, max_num2add=1, num_added=32):
+        self.add_std = add_std
+        self.max_num2add = max_num2add
+        self.num_added = num_added
+
+    def __call__(self, sample):
+        num_joints = sample['keypoints'][0].shape[0]
+        num2add = np.random.randint(1, self.max_num2add)
+        idxs2add = np.random.choice(num_joints, num2add, replace=False)
+
+        new_pcs = []
+        for i in range(len(sample['keypoints'])):
+            pc = sample['point_clouds'][i]
+            for idx in idxs2add:
+                add_point = sample['keypoints'][i][idx]
+                # with open('emm.txt', 'a') as f:
+                #     x = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][-1].shape[-1])).shape
+                #     f.write(f'{add_point.shape}, {x}')
+                add_points = add_point[np.newaxis, :].repeat(self.num_added, axis=0) + np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][-1].shape[-1]))
+                pc = np.concatenate([pc, add_points], axis=0)
+            new_pcs.append(pc)
+
+        sample['point_clouds'] = new_pcs
         return sample
     
 class GenerateBinaryGroundTruth():
@@ -214,31 +269,7 @@ class RandomDrop():
             sample['point_clouds'][i] = np.delete(sample['point_clouds'][i], drop_indices, axis=0)
         return sample
 
-class DropAroundPoint():
-    def __init__(self, drop_radius=0.1):
-        self.drop_radius = drop_radius
-
-    def __call__(self, sample):
-        for i in range(len(sample['point_clouds'])):
-            drop_idx = np.random.randint(0, len(sample['point_clouds'][i]))
-            drop_indices = np.where(np.linalg.norm(sample['point_clouds'][i][...,:3] - sample['point_clouds'][i][drop_idx:drop_idx+1,:3], axis=1) < self.drop_radius)
-            sample['point_clouds'][i] = np.delete(sample['point_clouds'][i], drop_indices, axis=0)
-        return sample
-    
-class AddAroundPoint():
-    def __init__(self, add_radius=0.1, num_points=1):
-        self.add_radius = add_radius
-        self.num_points = num_points
-
-    def __call__(self, sample):
-        for i in range(len(sample['point_clouds'])):
-            add_idx = np.random.randint(0, len(sample['point_clouds'][i]))
-            add_point = sample['point_clouds'][i][add_idx:add_idx+1]
-            add_points = add_point.repeat(self.num_points, axis=0) + np.random.normal(0, self.add_radius, (self.num_points, sample['point_clouds'][-1].shape[-1]))
-            sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i], add_points], axis=0)
-        return sample
-
-class GetCentroidRadius():
+class GetCentroid():
     def __init__(self, centroid_type='minball'):
         self.centroid_type = centroid_type
         if centroid_type not in ['none', 'zonly', 'mean', 'median', 'minball', 'dataset_median']:
@@ -249,37 +280,35 @@ class GetCentroidRadius():
         pc_dedupe = np.unique(pc_cat[...,:3], axis=0)
         if self.centroid_type == 'none':
             centroid = np.zeros(3)
-            radius = 1.
         elif self.centroid_type == 'zonly':
             centroid = np.zeros(3)
             centroid[2] = np.median(pc_dedupe[...,2])
-            radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
         elif self.centroid_type == 'mean':
             centroid = np.mean(pc_dedupe[...,:3], axis=0)
-            radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
         elif self.centroid_type == 'median':
             centroid = np.median(pc_dedupe[...,:3], axis=0)
-            radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
         elif self.centroid_type == 'minball':
             try:
-                centroid, radius = get_bounding_ball(pc_dedupe)
+                centroid, _ = get_bounding_ball(pc_dedupe)
             except:
                 print('Error in minball')
                 centroid = np.mean(pc_dedupe[...,:3], axis=0)
-                radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
         elif self.centroid_type == 'dataset_median':
-            if sample['skeleton_type'] == 'mmbody':
+            if sample['dataset_name'] == 'mmbody':
                 centroid = np.array([0., 0., 3.50313997])
-            elif sample['skeleton_type'] == 'mri':
+            elif sample['dataset_name'] == 'mri':
                 centroid = np.array([0., -0.012695, 2.3711])
-            elif sample['skeleton_type'] == 'mmfi':
+            elif sample['dataset_name'] == 'mmfi':
                 centroid = np.array([-0.09487205, -0.09743616, 3.04673481])
+            elif sample['dataset_name'] == 'itop_side':
+                centroid = np.array([-0.0716, -0.25, 2.908])
+            elif sample['dataset_name'] == 'itop_top':
+                centroid = np.array([-0.05297852, -1.19726562, 0.08111572])
             else:
                 raise NotImplementedError
         else:
             raise ValueError('You should never reach here! centroid_type must be "mean" or "minball"')
         sample['centroid'] = centroid
-        sample['radius'] = 1.
         return sample
 
 class Normalize():
@@ -289,14 +318,11 @@ class Normalize():
     def __call__(self, sample):
         for i in range(len(sample['point_clouds'])):
             sample['point_clouds'][i][...,:3] -= sample['centroid'][np.newaxis]
-            sample['point_clouds'][i][...,:3] /= sample['radius']
             if self.feat_scale:
                 sample['point_clouds'][i][...,3:] /= np.array(self.feat_scale)[np.newaxis][np.newaxis]
                 sample['feat_scale'] = self.feat_scale
-        # print('normalize', len(sample['point_clouds']), len(sample['keypoints']), sample['centroid'], sample['radius'])
         if 'keypoints' in sample:
             sample['keypoints'] -= sample['centroid'][np.newaxis][np.newaxis]
-            sample['keypoints'] /= sample['radius']
         return sample
     
 class Flip():
@@ -319,16 +345,16 @@ class Flip():
     
 class ToSimpleCOCO():
     def __call__(self, sample):
-        if sample['skeleton_type'] == 'mmbody':
+        if sample['dataset_name'] == 'mmbody':
             transfer_func = mmbody2simplecoco
-        elif sample['skeleton_type'] == 'mri':
+        elif sample['dataset_name'] == 'mri':
             transfer_func = coco2simplecoco
-        elif sample['skeleton_type'] == 'mmfi':
+        elif sample['dataset_name'] == 'mmfi':
             transfer_func = mmfi2simplecoco
-        elif sample['skeleton_type'] == 'itop':
+        elif sample['dataset_name'] in ['itop_side', 'itop_top']:
             transfer_func = itop2simplecoco
         else:
-            raise ValueError('You should never reach here! skeleton_type must be "mmbody", "coco", "mmfi" or "itop"')
+            raise ValueError('You should never reach here! dataset_name must be "mmbody", "mri", "mmfi", "itop_side" or "itop_top"')
         
         if isinstance(sample['keypoints'], list):
             sample['keypoints'] = [transfer_func(kp) for kp in sample['keypoints']]

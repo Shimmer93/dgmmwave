@@ -71,9 +71,9 @@ train_pipeline:
   - name: UniformSample
     params: 
       clip_len: 5
-  - name: GetCentroidRadius
+  - name: GetCentroid
     params: 
-      centroid_type: 'zonly'
+      centroid_type: 'dataset_median'
   - name: ToSimpleCOCO
     params: null
   - name: RemoveOutliers
@@ -120,9 +120,9 @@ val_pipeline: &val_pipeline
   - name: UniformSample
     params: 
       clip_len: 5
-  - name: GetCentroidRadius
+  - name: GetCentroid
     params: 
-      centroid_type: 'zonly'
+      centroid_type: 'dataset_median'
   - name: ToSimpleCOCO
     params: null
   - name: RemoveOutliers

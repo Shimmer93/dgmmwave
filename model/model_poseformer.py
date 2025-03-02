@@ -10,10 +10,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.models.helpers import load_pretrained
-from timm.models.layers import DropPath, to_2tuple, trunc_normal_
-from timm.models.registry import register_model
+# from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+# from timm.models.helpers import load_pretrained
+# from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+# from timm.models.registry import register_model
 
 
 class Mlp(nn.Module):
