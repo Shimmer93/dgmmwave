@@ -8,90 +8,89 @@ import matplotlib.pyplot as plt
 # import tensorboard
 
 from model.metrics import calulate_error
-<<<<<<< HEAD
+from loss.mpjpe import mpjpe as mpjpe_mmwave
+from misc.utils import torch2numpy, import_with_str
 from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
 from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
 from loss.mpjpe import mpjpe as mpjpe_poseformer
 from misc.utils import torch2numpy
 from misc.skeleton import SimpleCOCOSkeleton
 
-def create_model(hparams):
-    if hparams.model_name.lower() == 'p4t':
-        model = P4Transformer(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda':
-        model = P4TransformerDA(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, mem_size=hparams.mem_size, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda2':
-        model = P4TransformerDA2(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, mem_size=hparams.mem_size, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda3':
-        model = P4TransformerDA3(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda4':
-        model = P4TransformerDA4(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda5':
-        model = P4TransformerDA5(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
-                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
-    elif hparams.model_name.lower() == 'p4tda6':
-        model = P4TransformerDA6(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
-                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
-    elif hparams.model_name.lower() == 'p4tda7':
-        model = P4TransformerDA7(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda8':
-        model = P4TransformerDA8(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
-                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
-    elif hparams.model_name.lower() == 'ptr' or hparams.model_name.lower() == 'ptr2':
-        model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
-        num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
-    elif hparams.model_name.lower() == 'debug':
-        model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
-    else:
-        raise ValueError(f'Unknown model name: {hparams.model_name}')
+# def create_model(hparams):
+#     if hparams.model_name.lower() == 'p4t':
+#         model = P4Transformer(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+#                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+#                               emb_relu=hparams.emb_relu,
+#                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+#                               mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
+#     elif hparams.model_name.lower() == 'p4tda':
+#         model = P4TransformerDA(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+#                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+#                               emb_relu=hparams.emb_relu,
+#                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+#                               mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, mem_size=hparams.mem_size, features=hparams.features)
+#     elif hparams.model_name.lower() == 'p4tda2':
+#         model = P4TransformerDA2(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+#                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+#                               emb_relu=hparams.emb_relu,
+#                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+#                               mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, mem_size=hparams.mem_size, features=hparams.features)
+#     elif hparams.model_name.lower() == 'p4tda3':
+#         model = P4TransformerDA3(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+#                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+#                               emb_relu=hparams.emb_relu,
+#                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+#                               mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
+#     elif hparams.model_name.lower() == 'p4tda4':
+#         model = P4TransformerDA4(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+#                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+#                               emb_relu=hparams.emb_relu,
+#                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+#                               mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
+#     elif hparams.model_name.lower() == 'p4tda5':
+#         model = P4TransformerDA5(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+#                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+#                               emb_relu=hparams.emb_relu,
+#                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+#                               dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
+#                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
+#     elif hparams.model_name.lower() == 'p4tda6':
+#         model = P4TransformerDA6(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+#                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+#                               emb_relu=hparams.emb_relu,
+#                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+#                               dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
+#                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
+#     elif hparams.model_name.lower() == 'p4tda7':
+#         model = P4TransformerDA7(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+#                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+#                               emb_relu=hparams.emb_relu,
+#                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+#                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features)
+#     elif hparams.model_name.lower() == 'p4tda8':
+#         model = P4TransformerDA8(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
+#                               temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
+#                               emb_relu=hparams.emb_relu,
+#                               dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
+#                               dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
+#                               mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
+#     elif hparams.model_name.lower() == 'ptr' or hparams.model_name.lower() == 'ptr2':
+#         model = PoseTransformer(num_frame=hparams.number_of_frames, num_joints=hparams.num_joints, num_input_dims = hparams.num_input_dims, in_chans=hparams.in_chans, embed_dim_ratio=hparams.embed_dim_ratio, depth=hparams.depth,
+#         num_heads=hparams.num_heads, mlp_ratio=hparams.mlp_ratio, qkv_bias=hparams.qkv_bias, qk_scale=None, drop_path_rate=hparams.drop_path_rate)
+#     elif hparams.model_name.lower() == 'debug':
+#         model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
+#     else:
+#         raise ValueError(f'Unknown model name: {hparams.model_name}')
     
-=======
-from loss.mpjpe import mpjpe as mpjpe_mmwave
-from misc.utils import torch2numpy, import_with_str
-
+# =======
 def create_model(model_name, model_params):
     if model_params is None:
         model_params = {}
     model_class = import_with_str('model', model_name)
     model = model_class(**model_params)
->>>>>>> d6c2095c461b5f7125e2e2c5c97eb4e291780ec6
     return model
+
+
 
 def create_loss(loss_name, loss_params):
     if loss_params is None:
@@ -279,13 +278,19 @@ class LitModel(pl.LightningModule):
         x = batch['point_clouds']
         c = batch['centroid']
         r = batch['radius']
+        print(batch)
 
         y_hat = self.model(x)
         x = self._recover_point_cloud(x, c, r)
         y_hat = self._recover_skeleton(y_hat, c, r)
         
         pred = {'name': batch['name'], 'index': batch['index'], 'keypoints': y_hat, 'point_clouds': x}
-        
+        # pred = {
+        #    'name': batch.get('name', 'unknown'),
+        #    'index': batch.get('index', batch_idx),
+        #    'keypoints': y_hat,
+        #    'point_clouds': x
+        # }
         return pred
 
     def configure_optimizers(self):

@@ -329,6 +329,7 @@ class MMFiPreprocessor_lidar(Preprocessor):
                 # data_tmp = data_tmp[:, [1, 2, 0, 3, 4]]
                 # TODO: Check
                 data_tmp = data_tmp[:, [1, 2, 0]]
+                data_tmp[:, 1:2] = -data_tmp[:, 1:2]
                 pcs.append(data_tmp)
                 keep_idx = int(os.path.basename(bin_fn).split('.')[0][5:]) - 1
                 keep_idxs.append(keep_idx)
