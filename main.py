@@ -117,6 +117,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     cfg = load_cfg(args.cfg)
     args = merge_args_cfg(args, cfg)
+    print(args)
+    print(args.batch_size)
 
     # os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
