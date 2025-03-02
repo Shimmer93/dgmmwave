@@ -11,18 +11,18 @@ epochs: &epochs 100
 train_dataset:
   name: TemporalDataset
   params:
-    data_path: &data_path data/mmfi.pkl
-    split: [train_rdn_p3, val_rdn_p3]
+    data_path: &data_path data/itop_top.pkl
+    split: [train, val]
 val_dataset:
   name: TemporalDataset
   params:
     data_path: *data_path
-    split: test_rdn_p3
+    split: test
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: *data_path
-    split: test_rdn_p3
+    data_path: data/itop_top.pkl
+    split: test
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -43,19 +43,21 @@ sched_params:
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: SPiKE
+model_name: P4Transformer
 model_params:
-  radius: 0.2
+  radius: 0.7
   nsamples: 32
-  spatial_stride: 32
+  spatial_stride: 8
+  temporal_kernel_size: 3
+  temporal_stride: 1
+  emb_relu: false
   dim: 1024
   depth: 5
   heads: 8
-  dim_head: 256
+  dim_head: 128
   mlp_dim: 2048
-  num_coord_joints: 39
-  dropout1: 0.0
-  dropout2: 0.0
+  output_dim: 39
+  features: 3
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -70,15 +72,12 @@ w_mem: 0.001
 train_pipeline:
   - name: UniformSample
     params: 
-      clip_len: 7
+      clip_len: 5
   - name: GetCentroidRadius
     params: 
       centroid_type: 'zonly'
   - name: ToSimpleCOCO
     params: null
-  - name: MultiFrameAggregate
-    params:
-      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
@@ -122,15 +121,12 @@ train_pipeline:
 val_pipeline: &val_pipeline
   - name: UniformSample
     params: 
-      clip_len: 7
+      clip_len: 5
   - name: GetCentroidRadius
     params: 
       centroid_type: 'zonly'
   - name: ToSimpleCOCO
     params: null
-  - name: MultiFrameAggregate
-    params:
-      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'

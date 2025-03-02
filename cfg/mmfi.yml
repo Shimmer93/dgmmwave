@@ -43,19 +43,21 @@ sched_params:
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: SPiKE
+model_name: P4Transformer
 model_params:
-  radius: 0.2
+  radius: 0.7
   nsamples: 32
-  spatial_stride: 32
+  spatial_stride: 8
+  temporal_kernel_size: 3
+  temporal_stride: 1
+  emb_relu: false
   dim: 1024
   depth: 5
   heads: 8
-  dim_head: 256
+  dim_head: 128
   mlp_dim: 2048
-  num_coord_joints: 39
-  dropout1: 0.0
-  dropout2: 0.0
+  output_dim: 39
+  features: 3
 # --------------------------------------
 # Loss parameters
 # --------------------------------------

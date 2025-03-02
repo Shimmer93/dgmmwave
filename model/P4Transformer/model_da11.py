@@ -34,8 +34,8 @@ class JointAttention(nn.Module):
 
         return x
     
-class MultiHeadJointAttention(nn.Module):
-    def __init__(self, dim, heads, dim_head, num_joints=13):
+class PointAttention(nn.Module):
+    def __init__(self, dim, heads, dim_head):
         super().__init__()
         inner_dim = dim_head * heads
         self.heads = heads
@@ -65,76 +65,165 @@ class MultiHeadJointAttention(nn.Module):
 
         return out
 
-class PointProposer(nn.Module):
-    def __init__(self, dim, heads, dim_head, features, num_proposal):
+class PointReplacer(nn.Module):
+    def __init__(self, dim, heads, dim_head, num_to_add):
         super().__init__()
 
-        self.m1 = nn.Sequential(
+        self.enc = nn.Sequential(
+            nn.Linear(3, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+            nn.Linear(dim, dim)
+        )
+        self.enc_conf = nn.Sequential(
             nn.Linear(3, dim),
             nn.LayerNorm(dim),
             nn.GELU(),
             nn.Linear(dim, dim)
         )
 
-        self.transformer = Transformer(dim, 4, heads, dim_head, dim*2)
-        self.attn = MultiHeadJointAttention(dim, heads, dim_head, num_proposal)
+        self.trans = Transformer(dim, 4, heads, dim_head, dim*2)
+        self.attn = PointAttention(dim, heads, dim_head)
 
-        self.m2 = nn.Sequential(
+        self.dec_point = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, dim),
             nn.GELU(),
             nn.Linear(dim, 3)
         )
 
-    def forward(self, input, proposal_embed):
-        B, L, N, C = input.shape
-        input = input.reshape(B*L, N, C)
-        new_input = self.m1(input)
-        new_input = self.transformer(new_input)
-        new_input = self.attn(new_input, proposal_embed)
-        new_input = self.m2(new_input)
-        input = torch.cat((input, new_input), dim=1)
-        input = input.reshape(B, L, -1, C)
-        return input
+        self.dec_conf = nn.Sequential(
+            nn.LayerNorm(dim),
+            nn.Linear(dim, dim),
+            nn.GELU(),
+            nn.Linear(dim, 1)
+        )
 
-# class AttentionMemoryBank(nn.Module):
-#     def __init__(self, dim, mem_size, heads, dim_head):
-#         super().__init__()
-#         self.mem = nn.Parameter(torch.FloatTensor(1, dim, mem_size).normal_(0.0, 1.0))
+    def forward(self, points, proposal_embed, conf_gt=None, apply_conf=True):
+        B, L, N, C = points.shape
+        points = points.reshape(B*L, N, C)
+        points_orig = points
 
-#         inner_dim = dim_head * heads
-#         self.heads = heads
-#         self.dim_head = dim_head
-#         self.scale = dim_head ** -0.5
+        feat = self.enc(points)
+        feat = self.trans(feat)
+        feat_new = self.attn(feat, proposal_embed)
+        conf = self.dec_conf(feat)
+        points_new = self.dec_point(feat_new) 
 
-#         # self.to_q = nn.Linear(dim, inner_dim, bias=False)
-#         # self.to_kv = nn.Linear(dim, inner_dim * 2, bias=False)
-#         self.to_out = nn.Linear(inner_dim, dim)
+        if conf_gt is not None:
+            conf_ = conf_gt.reshape(B*L, N, 1).detach()
+        else:
+            conf_ = (F.sigmoid(conf) > 0.5).to(points.dtype).detach()
 
-#     def forward(self, x):
-#         B, N, C = x.shape
+        points = conf_ * points_orig + (1 - conf_) * points_new
 
-#         _, _, M = self.mem.shape
-#         m = self.mem.repeat(B, 1, 1)
-#         m = m.transpose(1, 2)
+        # self.enc.requires_grad_(False)
+        # self.transformer.requires_grad_(False)
+        # self.conf_dec.requires_grad_(False)
+        # feat_new = self.enc(points_new)
+        # feat_new = self.transformer(feat_new)
+        # conf_new = self.conf_dec(feat_new)
 
-#         # q = self.to_q(x)
-#         q = x
-#         q = q.reshape(B, N, self.heads, self.dim_head).permute(0, 2, 1, 3)
+        # self.enc.requires_grad_(True)
+        # self.transformer.requires_grad_(True)
+        # self.conf_dec.requires_grad_(True)
 
-#         k = m.reshape(B, M, self.heads, self.dim_head).permute(0, 2, 1, 3)
-#         v = k.clone()
-#         # kv = self.to_kv(m).chunk(2, dim=-1)
-#         # k, v = map(lambda t: t.reshape(B, M, self.heads, self.dim_head).permute(0, 2, 1, 3), kv)
+        points = points.reshape(B, L, -1, C).float()
+        return points, conf.reshape(B, L, -1, 1), points_new.reshape(B, L, -1, C) #, conf_new.reshape(B, L, -1, 1)
 
-#         dots = torch.einsum('bhid,bhjd->bhij', q, k) * self.scale
-#         attn = dots.softmax(dim=-1)
+class PointRemover(nn.Module):
+    def __init__(self, dim, heads, dim_head, num_to_remove):
+        super().__init__()
 
-#         out = torch.einsum('bhij,bhjd->bhid', attn, v).reshape(B, self.heads, N, self.dim_head)
-#         out = out.permute(0, 2, 1, 3).reshape(B, N, -1)
-#         out = self.to_out(out)
+        self.enc = nn.Sequential(
+            nn.Linear(3, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+            nn.Linear(dim, dim)
+        )
 
-#         return out
+        self.trans = Transformer(dim, 4, heads, dim_head, dim*2)
+
+        self.dec = nn.Sequential(
+            nn.LayerNorm(dim),
+            nn.Linear(dim, dim),
+            nn.GELU(),
+            nn.Linear(dim, 1)
+        )
+
+        self.num_to_remove = num_to_remove
+
+    def forward(self, points):
+        B, L, N, C = points.shape
+        points = points.reshape(B*L, N, C)
+
+        conf = self.dec(self.trans(self.enc(points)))
+        conf_ = conf.detach().clone()
+
+        for i in range(self.num_to_remove):
+            min_idx = conf.argmin(dim=1, keepdim=True)
+            points = torch.cat([points[:, :min_idx], points[:, min_idx+1:]], dim=1)
+            conf_ = torch.cat([conf_[:, :min_idx], conf_[:, min_idx+1:]], dim=1)
+
+        points = points.reshape(B, L, -1, C)
+
+        return points, conf.reshape(B, L, -1, 1)
+    
+class PointReplacer(nn.Module):
+    def __init__(self, dim, heads, dim_head, num_to_add):
+        super().__init__()
+
+        self.enc = nn.Sequential(
+            nn.Linear(3, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+            nn.Linear(dim, dim)
+        )
+
+        self.trans = Transformer(dim, 4, heads, dim_head, dim*2)
+        self.attn = PointAttention(dim, heads, dim_head)
+
+        self.dec = nn.Sequential(
+            nn.LayerNorm(dim),
+            nn.Linear(dim, dim),
+            nn.GELU(),
+            nn.Linear(dim, 3)
+        )
+
+        self.dec_conf = nn.Sequential(
+            nn.LayerNorm(dim),
+            nn.Linear(dim, dim),
+            nn.GELU(),
+            nn.Linear(dim, 1)
+        )
+
+        self.num_to_add = num_to_add
+
+    def forward(self, points, proposal_embed):
+        B, L, N, C = points.shape
+        points = points.reshape(B*L, N, C)
+
+        points_add = self.enc(points)
+        points_add = self.trans(points_add)
+        conf = self.dec_conf(points_add)
+        points_add = self.attn(points_add, proposal_embed)
+        points_add = self.dec(points_add)
+
+        conf_ = conf.detach().clone()
+        masks_keep = []
+        for i in range(B*L):
+            idx_to_remove = conf_[i, :, 0].topk(self.num_to_add, largest=False).indices
+            mask_keep = torch.ones(N, dtype=torch.bool, device=points.device)
+            mask_keep[idx_to_remove] = False
+            masks_keep.append(mask_keep)
+        masks_keep = torch.stack(masks_keep, dim=0).unsqueeze(-1)
+        points = points * masks_keep
+
+        points = torch.cat([points, points_add], dim=1)
+        points = points.reshape(B, L, -1, C)
+
+        return points, conf.reshape(B, L, -1, 1)
+
 
 class AttentionMemoryBank(nn.Module):
     def __init__(self, dim, mem_size):
@@ -222,7 +311,7 @@ class Model(nn.Module):
 
         return output
 
-class P4TransformerDA9(nn.Module):
+class P4TransformerDA11(nn.Module):
     def __init__(self, radius, nsamples, spatial_stride,                                # P4DConv: spatial
                  temporal_kernel_size, temporal_stride,                                 # P4DConv: temporal
                  emb_relu,                                                              # embedding: relu
@@ -231,7 +320,7 @@ class P4TransformerDA9(nn.Module):
                  mlp_dim, num_joints=13, features=3, num_proposal=16, mem_size=1024):   # output
         super().__init__()
 
-        self.point_proposer = PointProposer(dim_proposal, heads_proposal, dim_head_proposal, features, num_proposal)
+        self.point_replacer = PointReplacer(dim_proposal, heads_proposal, dim_head_proposal, num_proposal)
 
         self.proposal_embed_s = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
         self.proposal_embed_t = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
@@ -254,7 +343,7 @@ class P4TransformerDA9(nn.Module):
             return self.forward_train(input)
         
     def forward_inference(self, input):
-        input = self.point_proposer(input[:,:,:,:3], self.proposal_embed_t)
+        input, _ = self.point_replacer(input[...,:3], self.proposal_embed_s)
         embedding = self.model_s.encode(input)
         output0 = self.model_s.transformer(embedding)
         output = self.model_t.mem(output0) # [B, L*n, C]
@@ -263,19 +352,32 @@ class P4TransformerDA9(nn.Module):
         
     def forward_train(self, input):
         input_s, input_t = input
-        input_s = self.point_proposer(input_s[:,:,:,:3], self.proposal_embed_s)
-        input_t = self.point_proposer(input_t[:,:,:,:3], self.proposal_embed_t)
+        # print(input_s.shape, input_t.shape)
+        # self.proposal_embed_s.requires_grad_(True)
+        # self.point_proposer.mem.requires_grad_(True)
+        points_s, conf_s = self.point_replacer(input_s[...,:3], self.proposal_embed_s)
+        # self.point_proposer.mem.requires_grad_(False)
+        points_t, _ = self.point_replacer(input_t[...,:3], self.proposal_embed_s)
+        # self.proposal_embed_s.requires_grad_(False)
+        # print(conf_s.shape, input_s.shape, (input_s[...,-1:] > 0).sum().item(), (input_s[...,-1:] == 0).sum().item())
+        # print(F.sigmoid(conf_s).max().item(), F.sigmoid(conf_s).min().item(), F.sigmoid(conf_s).mean().item())
+        l_conf = F.binary_cross_entropy_with_logits(conf_s[input_s[...,-1:] > 0], torch.ones_like(conf_s[input_s[...,-1:] > 0])) + \
+                    F.binary_cross_entropy_with_logits(conf_s[input_s[...,-1:] == 0], torch.zeros_like(conf_s[input_s[...,-1:] == 0]))#+ \
+                    # F.binary_cross_entropy_with_logits(conf_new_s, torch.ones_like(conf_new_s)) + \
+                    # F.binary_cross_entropy_with_logits(conf_new_t, torch.zeros_like(conf_new_t))
+        # l_prec_s = F.mse_loss(points_new_s, input_s[...,:3])
+        # l_prec_t = F.mse_loss(points_new_t, input_t[...,:3])
 
         self.model_s.mem.requires_grad_(True)
         self.model_t.mem.requires_grad_(True)
-        embedding_s = self.model_s.encode(input_s)
+        embedding_s = self.model_s.encode(points_s)
         output0_s = self.model_s.transformer(embedding_s)
         output0_s2 = output0_s.clone()
         mem_s = self.model_s.mem(output0_s) # [B, L*n, C]
         l_rec_s = F.mse_loss(mem_s[:, :output0_s.shape[1], :], output0_s)
         output_s = self.model_s.decode(mem_s)
 
-        embedding_t = self.model_s.encode(input_t)
+        embedding_t = self.model_s.encode(points_t)
         output0_t = self.model_s.transformer(embedding_t)
         output0_t2 = output0_t.clone()
         output_t = self.model_t.mem(output0_t) # [B, L*n, C]
@@ -291,4 +393,4 @@ class P4TransformerDA9(nn.Module):
         output_t2 = self.model_s.mem(output0_t2)
         output_t2 = self.model_s.decode(output_t2)
 
-        return output_s, output_t, output_s2, output_t2, l_rec_s, l_rec_t, l_mem
+        return output_s, output_s2, l_conf, l_rec_s, l_rec_t, l_mem #, points_new_s, points_new_t

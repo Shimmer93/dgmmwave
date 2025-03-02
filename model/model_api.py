@@ -3,6 +3,9 @@ import torch
 import pytorch_lightning as pl
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import matplotlib.pyplot as plt
+import os
+import pickle
+from pytorch3d.loss import chamfer_distance
 
 # import wandb
 # import tensorboard
@@ -125,6 +128,8 @@ class LitModel(pl.LightningModule):
         if hparams.checkpoint_path is not None:
             self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'], strict=False)
         self.loss = create_loss(hparams.loss_name, hparams.loss_params)
+        if hparams.save_when_test:
+            self.results = []
 
     def _recover_point_cloud(self, x, center, radius):
         x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
@@ -197,8 +202,43 @@ class LitModel(pl.LightningModule):
                 losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
             else:
                 raise ValueError('mode must be train!')
-        elif self.hparams.model_name.lower() == 'PoseTransformer':
-            #TODO: Implement the loss function of posetransformer
+        elif self.hparams.model_name in ['P4TransformerDA10']:
+            if self.hparams.mode == 'train':
+                x_ref = batch['ref_point_clouds']
+                y_hat, y_hat2, l_prec, l_prec_ref, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
+                l_pc = self.loss(y_hat, y)
+                l_pc2 = self.loss(y_hat2, y.clone())
+                # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
+                # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
+                loss = l_pc + l_pc2 + self.hparams.w_rec * (l_rec + l_rec_ref) + self.hparams.w_mem * l_mem # + w_con * l_con
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_prec': l_prec, 'l_prec_ref': l_prec_ref, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
+        elif self.hparams.model_name in ['P4TransformerDA11']:
+            if self.hparams.mode == 'train':
+                x_ref = batch['ref_point_clouds']
+                y_hat, y_hat2, l_conf, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
+                l_pc = self.loss(y_hat, y)
+                l_pc2 = self.loss(y_hat2, y.clone())
+                # B, T, L, C = x_new_hat.shape
+                # l_dist = torch.cdist(x_new[:, 2], y[:, 0]).min(dim=-1)[0].mean()
+                # l_dist = 0
+                # for i in range(B):
+                #     for j in range(T):
+                #         x_new_ij = x_new[i, j]
+                #         x_ij = x[i, j][..., :C]
+                #         conf_ij = x[i, j][..., -1]
+                #         l_dist += chamfer_distance(x_new_ij.reshape(1, -1, C).to(x.dtype), x_ij[conf_ij > 0].reshape(1, -1, C).detach())[0]
+                # l_dist /= B * T
+                # l_dist = chamfer_distance(x_new_hat.reshape(-1, L, C).to(x.dtype), x[..., :C].reshape(-1, L, C).detach())[0] + \
+                #             chamfer_distance(x_new_ref_hat.reshape(-1, L, C).to(x.dtype), x_ref[..., :C].reshape(-1, L, C).detach())[0]
+                # l_dist_ref, _ = chamfer_distance(x_new_ref.reshape(-1, L, C).to(x.dtype), x_ref[..., :C].reshape(-1, L, C).detach())
+                # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
+                # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
+                loss = l_pc + l_pc2 + self.hparams.w_conf * l_conf + self.hparams.w_rec * (l_rec + l_rec_ref) + \
+                    self.hparams.w_mem * l_mem # + self.hparams.w_dist * l_dist # + self.hparams.w_prec * l_prec  # + w_con * l_con
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_conf': l_conf, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem} #, 'l_dist': l_dist}
+        elif self.hparams.model_name == 'PoseTransformer':
+            #TODO: Implement the loss function of posetran
+            # sformer
             x = x[:, :, :, :3]
             y_hat = self.model(x)
             y_mod = torch.clone(y)
@@ -226,7 +266,10 @@ class LitModel(pl.LightningModule):
     def _evaluate(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
-        y_hat = self.model(x)
+        if self.hparams.model_name in ['P4TransformerDA11']:
+            y_hat = self.model(x, mode='inference')
+        else:
+            y_hat = self.model(x)
         return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
@@ -273,6 +316,28 @@ class LitModel(pl.LightningModule):
         self.log_dict({'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
         if batch_idx == 0:
             self._vis_pred_gt_keypoints(x, y, y_hat)
+
+        if self.hparams.save_when_test:
+            result = {'pred': y_hat, 'gt': y, 'input': x}
+            self.results.append(result)
+
+    def on_test_end(self):
+        if self.hparams.save_when_test:
+            results_to_save = {'pred': [], 'gt': [], 'input': []}
+
+            for result in self.results:
+                results_to_save['pred'].append(result['pred'])
+                results_to_save['gt'].append(result['gt'])
+                results_to_save['input'].append(result['input'])
+
+            results_to_save['pred'] = np.concatenate(results_to_save['pred'], axis=0)
+            results_to_save['gt'] = np.concatenate(results_to_save['gt'], axis=0)
+            results_to_save['input'] = np.concatenate(results_to_save['input'], axis=0)
+
+            with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
+                pickle.dump(results_to_save, f)
+
+        return super().on_test_end()
 
     def predict_step(self, batch, batch_idx):
         x = batch['point_clouds']

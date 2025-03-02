@@ -81,17 +81,58 @@ class MMBodySkeleton:
 
 class MMFiSkeleton:
     joint_names = [
-        "pelvis", "left_hip", "left_knee", "left_ankle", "right_hip", "right_knee", "right_ankle", 
-        "waist", "neck", "nose", "head", "right_shoulder", "right_elbow", "right_wrist", 
-        "left_shoulder", "left_elbow", "left_wrist"
+        "pelvis", "right_hip", "right_knee", "right_ankle", "left_hip", "left_knee", "left_ankle", 
+        "waist", "neck", "nose", "head", "left_shoulder", "left_elbow", "left_wrist", 
+        "right_shoulder", "right_elbow", "right_wrist"
     ]
     bones = [
         [0, 1], [0, 4], [0, 7], [1, 2], [2, 3], [4, 5], [5, 6], [7, 8], [8, 9], [8, 11], [8, 14],
         [9, 10], [11, 12], [12, 13], [14, 15], [15, 16]
     ]
-    left_indices = [1, 2, 3, 14, 15, 16]
-    right_indices = [4, 5, 6, 11, 12, 13]
+    left_indices = [4, 5, 6, 11, 12, 13]
+    right_indices = [1, 2, 3, 14, 15, 16]
         
+    num_joints = len(joint_names)
+    flip_indices = get_flip_indices(num_joints, left_indices, right_indices)
+    left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
+    center = 0
+
+class MiliPointSkeleton:
+    joint_names = [
+        "nose", "neck", "right_shoulder", "right_elbow", "right_wrist", "left_shoulder", "left_elbow", 
+        "left_wrist", "right_hip", "right_knee", "right_ankle", "left_hip", "left_knee", "left_ankle", 
+        "right_eye", "left_eye", "right_ear", "left_ear"
+    ]
+
+    bones = [
+        [0, 1], [1, 2], [2, 3], [3, 4], [1, 5], [5, 6], [6, 7], [1, 8], [8, 9], [9, 10], [1, 11],
+        [11, 12], [12, 13], [0, 14], [0, 15], [14, 16], [15, 17]
+    ]
+    left_indices = [2, 3, 4, 8, 9, 10, 14, 16]
+    right_indices = [5, 6, 7, 11, 12, 13, 15, 17]
+        
+    num_joints = len(joint_names)
+    flip_indices = get_flip_indices(num_joints, left_indices, right_indices)
+    left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
+    center = 0
+
+class ITOPSkeleton:
+    joint_names = [
+        "nose", "neck", "right_shoulder", "left_shoulder", "right_elbow", "left_elbow", "right_wrist", 
+        "left_wrist", "spine", "right_hip", "left_hip", "right_knee", "left_knee", "right_ankle", 
+        "left_ankle"
+    ]
+    # joint_names = [
+    #     'nose', 'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow', 'left_wrist', 'right_wrist', 
+    #     'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle'
+    # ] 
+    bones = [
+        [14, 12], [12, 10], [13, 11], [11, 9],  [10, 8], [9, 8], [8, 1], [1, 0], [7, 5], [5, 3], 
+        [3, 1], [6, 4], [4, 2], [2, 1]
+    ]
+    left_indices = [3, 5, 7, 10, 12, 14]
+    right_indices = [2, 4, 6, 9, 11, 13]
+
     num_joints = len(joint_names)
     flip_indices = get_flip_indices(num_joints, left_indices, right_indices)
     left_bones, right_bones = get_left_right_bones(bones, left_indices, right_indices, flip_indices)
@@ -124,7 +165,13 @@ def mmbody2simplecoco(joints):
     return joints[..., [15, 16, 17, 18, 19, 20, 21, 1, 2, 4, 5, 7, 8], :]
 
 def mmfi2simplecoco(joints):
-    return joints[..., [9, 14, 11, 15, 12, 16, 13, 1, 4, 2, 5, 3, 6], :]
+    return joints[..., [9, 11, 14, 12, 15, 13, 16, 4, 1, 5, 2, 6, 3], :]
+
+def milipoint2simplecoco(joints):
+    return joints[..., [0, 5, 2, 6, 3, 7, 4, 11, 8, 12, 9, 13, 10], :]
+
+def itop2simplecoco(joints):
+    return joints[..., [0, 3, 2, 5, 4, 7, 6, 10, 9, 12, 11, 14, 13], :]
 
 def simplecoco2smpl(joints):
     def _j(indices):

@@ -456,28 +456,33 @@ class ITOPPreprocessor(Preprocessor):
         split_list = []
         last_id = None
         for pc, id, valid, kps, seg in tqdm(zip(data, ids, labels[0], labels[1], labels[2])):
-            if valid == 0 and (last_id is None or len(split_list[-1]['point_cloud']) > 0):
+            if valid == 0 and (last_id is None or len(split_list[-1]['point_clouds']) > 0):
                 split_list.append({
-                    'point_cloud': [],
+                    'point_clouds': [],
                     'keypoints': [],
                     'action': -1
                 })
             else:
-                if id.decode().split('_')[0] != last_id and (last_id is None or len(split_list[-1]['point_cloud']) > 0):
+                if id.decode().split('_')[0] != last_id and (last_id is None or len(split_list[-1]['point_clouds']) > 0):
                     split_list.append({
-                        'point_cloud': [],
+                        'point_clouds': [],
                         'keypoints': [],
                         'action': -1
                     })
                 pc = self._segment_human(pc, seg)
+                if len(pc) == 76800:
+                    print('Skipping due to invalid segmentation')
+                    continue
+                
                 if self.view == 'top':
                     pc = pc[..., [0, 2, 1]] * np.array([1, -1, 1])
+                    kps = kps[..., [0, 2, 1]] * np.array([1, -1, 1])
 
-                split_list[-1]['point_cloud'].append(pc)
+                split_list[-1]['point_clouds'].append(pc)
                 split_list[-1]['keypoints'].append(kps)
                 last_id = id.decode().split('_')[0]
 
-        split_list = [d for d in split_list if len(d['point_cloud']) >= 5]
+        split_list = [d for d in split_list if len(d['point_clouds']) >= 5]
         return split_list
 
 

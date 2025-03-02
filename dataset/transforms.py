@@ -4,7 +4,7 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
 
-from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco
+from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco, itop2simplecoco
 
 def log(x):
     print(x)
@@ -29,6 +29,19 @@ class GenerateSegmentationGroundTruth():
         #     raise ValueError('Error in GenerateSegmentationGroundTruth')
         sample['point_clouds'] = new_pcs
 
+        return sample
+    
+class GenerateBinaryGroundTruth():
+    def __init__(self, radius=0.1):
+        self.radius = radius
+
+    def __call__(self, sample):
+        new_pcs = []
+        for i in range(len(sample['keypoints'])):
+            neighbors = NearestNeighbors(radius=self.radius).fit(sample['keypoints'][i])
+            indices = neighbors.radius_neighbors(sample['point_clouds'][i][...,:3], return_distance=False)
+            new_pcs.append(np.concatenate([sample['point_clouds'][i], np.array([len(idx) > 0 for idx in indices], dtype=np.float32)[...,np.newaxis]], axis=-1))
+        sample['point_clouds'] = new_pcs
         return sample
 
 class RemoveOutliers():
@@ -150,9 +163,13 @@ class RandomScale():
         return sample
     
 class RandomRotate():
-    def __init__(self, angle_min=-np.pi, angle_max=np.pi):
+    def __init__(self, angle_min=-np.pi, angle_max=np.pi, deg=False):
         self.angle_min = angle_min
         self.angle_max = angle_max
+
+        if deg:
+            angle_min = np.pi * angle_min / 180
+            angle_max = np.pi * angle_max / 180
 
     def __call__(self, sample):
         angle_1 = np.random.uniform(self.angle_min, self.angle_max)
@@ -224,7 +241,7 @@ class AddAroundPoint():
 class GetCentroidRadius():
     def __init__(self, centroid_type='minball'):
         self.centroid_type = centroid_type
-        if centroid_type not in ['none', 'zonly', 'mean', 'median', 'minball']:
+        if centroid_type not in ['none', 'zonly', 'mean', 'median', 'minball', 'dataset_median']:
             raise ValueError('centroid_type must be "mean" or "minball"')
         
     def __call__(self, sample):
@@ -250,6 +267,15 @@ class GetCentroidRadius():
                 print('Error in minball')
                 centroid = np.mean(pc_dedupe[...,:3], axis=0)
                 radius = np.max(np.linalg.norm(pc_dedupe[...,:3] - centroid, axis=1))
+        elif self.centroid_type == 'dataset_median':
+            if sample['skeleton_type'] == 'mmbody':
+                centroid = np.array([0., 0., 3.50313997])
+            elif sample['skeleton_type'] == 'mri':
+                centroid = np.array([0., -0.012695, 2.3711])
+            elif sample['skeleton_type'] == 'mmfi':
+                centroid = np.array([-0.09487205, -0.09743616, 3.04673481])
+            else:
+                raise NotImplementedError
         else:
             raise ValueError('You should never reach here! centroid_type must be "mean" or "minball"')
         sample['centroid'] = centroid
@@ -318,22 +344,20 @@ class ToSimpleCOCO():
     """
     def __call__(self, sample):
         if sample['skeleton_type'] == 'mmbody':
-            if isinstance(sample['keypoints'], list):
-                sample['keypoints'] = [mmbody2simplecoco(kp) for kp in sample['keypoints']]
-            else:
-                sample['keypoints'] = mmbody2simplecoco(sample['keypoints'])
+            transfer_func = mmbody2simplecoco
         elif sample['skeleton_type'] == 'mri':
-            if isinstance(sample['keypoints'], list):
-                sample['keypoints'] = [coco2simplecoco(kp) for kp in sample['keypoints']]
-            else:
-                sample['keypoints'] = coco2simplecoco(sample['keypoints'])
+            transfer_func = coco2simplecoco
         elif sample['skeleton_type'] == 'mmfi' or sample['skeleton_type'] == 'mmfi_lidar':
-            if isinstance(sample['keypoints'], list):
-                sample['keypoints'] = [mmfi2simplecoco(kp) for kp in sample['keypoints']]
-            else:
-                sample['keypoints'] = mmfi2simplecoco(sample['keypoints'])
+            transfer_func = mmfi2simplecoco
+        elif sample['skeleton_type'] == 'itop':
+            transfer_func = itop2simplecoco
         else:
-            raise ValueError('You should never reach here! skeleton_type must be "mmbody" or "coco"')
+            raise ValueError('You should never reach here! skeleton_type must be "mmbody", "coco", "mmfi" or "itop"')
+        
+        if isinstance(sample['keypoints'], list):
+            sample['keypoints'] = [transfer_func(kp) for kp in sample['keypoints']]
+        else:
+            sample['keypoints'] = transfer_func(sample['keypoints'])
         return sample
 
 class ToTensor():
