@@ -5,7 +5,7 @@ from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import matplotlib.pyplot as plt
 import os
 import pickle
-from pytorch3d.loss import chamfer_distance
+# from pytorch3d.loss import chamfer_distance
 
 # import wandb
 # import tensorboard
