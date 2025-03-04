@@ -11,7 +11,7 @@ epochs: &epochs 100
 train_dataset:
   name: TemporalDataset
   params:
-    data_path: &data_path data/mmfi.pkl
+    data_path: &data_path data/mmfi_lidar.pkl
     split: [train_rdn_p3, val_rdn_p3]
 val_dataset:
   name: TemporalDataset
@@ -56,7 +56,7 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
-  output_dim: 39
+  output_dim: 45
   features: 3
 # --------------------------------------
 # Loss parameters
@@ -72,18 +72,15 @@ w_mem: 0.001
 train_pipeline:
   - name: UniformSample
     params: 
-      clip_len: 7
+      clip_len: 5
   - name: GetCentroid
     params: 
       centroid_type: 'dataset_median'
   - name: Normalize
     params:
       feat_scale: null
-  - name: ToSimpleCOCO
+  - name: ToITOP
     params: null
-  - name: MultiFrameAggregate
-    params:
-      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
@@ -137,15 +134,12 @@ train_pipeline:
 val_pipeline: &val_pipeline
   - name: UniformSample
     params: 
-      clip_len: 7
+      clip_len: 5
   - name: GetCentroid
     params: 
       centroid_type: 'dataset_median'
-  - name: ToSimpleCOCO
+  - name: ToITOP
     params: null
-  - name: MultiFrameAggregate
-    params:
-      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'

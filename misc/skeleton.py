@@ -122,10 +122,6 @@ class ITOPSkeleton:
         "left_wrist", "spine", "right_hip", "left_hip", "right_knee", "left_knee", "right_ankle", 
         "left_ankle"
     ]
-    # joint_names = [
-    #     'nose', 'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow', 'left_wrist', 'right_wrist', 
-    #     'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle'
-    # ] 
     bones = [
         [14, 12], [12, 10], [13, 11], [11, 9],  [10, 8], [9, 8], [8, 1], [1, 0], [7, 5], [5, 3], 
         [3, 1], [6, 4], [4, 2], [2, 1]
@@ -172,6 +168,13 @@ def milipoint2simplecoco(joints):
 
 def itop2simplecoco(joints):
     return joints[..., [0, 3, 2, 5, 4, 7, 6, 10, 9, 12, 11, 14, 13], :]
+
+def mmfi2itop(joints):
+    return joints[..., [9, 8, 14, 11, 15, 12, 16, 13, 7, 1, 4, 2, 5, 3, 6], :]
+
+def mmbody2itop(joints):
+    joints[..., 15, :] = (joints[..., 15, :] + joints[..., 12, :]) / 2
+    return joints[..., [15, 12, 17, 16, 19, 18, 21, 20, 6, 2, 1, 5, 4, 8, 7], :]
 
 def simplecoco2smpl(joints):
     def _j(indices):

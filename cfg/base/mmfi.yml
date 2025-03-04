@@ -4,25 +4,25 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: &epochs 300
+epochs: &epochs 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
 train_dataset:
   name: TemporalDataset
   params:
-    data_path: &data_path data/mmbody.pkl
-    split: [train, val]
+    data_path: &data_path data/mmfi.pkl
+    split: [train_rdn_p3, val_rdn_p3]
 val_dataset:
   name: TemporalDataset
   params:
     data_path: *data_path
-    split: test
+    split: test_rdn_p3
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
-    split: test
+    data_path: *data_path
+    split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -56,7 +56,7 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
-  output_dim: 39
+  output_dim: 45
   features: 3
 # --------------------------------------
 # Loss parameters
@@ -72,15 +72,18 @@ w_mem: 0.001
 train_pipeline:
   - name: UniformSample
     params: 
-      clip_len: 5
+      clip_len: 7
   - name: GetCentroid
     params: 
       centroid_type: 'dataset_median'
   - name: Normalize
     params:
       feat_scale: null
-  - name: ToSimpleCOCO
+  - name: ToITOP
     params: null
+  - name: MultiFrameAggregate
+    params:
+      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
@@ -134,12 +137,15 @@ train_pipeline:
 val_pipeline: &val_pipeline
   - name: UniformSample
     params: 
-      clip_len: 5
+      clip_len: 7
   - name: GetCentroid
     params: 
       centroid_type: 'dataset_median'
-  - name: ToSimpleCOCO
+  - name: ToITOP
     params: null
+  - name: MultiFrameAggregate
+    params:
+      num_frames: 3
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'

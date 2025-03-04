@@ -4,7 +4,7 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
 
-from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco, itop2simplecoco
+from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco, itop2simplecoco, mmfi2itop, mmbody2itop
 
 def log(x):
     print(x)
@@ -32,6 +32,8 @@ class GenerateSegmentationGroundTruth():
         segs = []
         for i in range(len(sample['keypoints'])):
             neighbors = NearestNeighbors(n_neighbors=1).fit(sample['keypoints'][i])
+            with open('emm.txt', 'a') as f:
+                f.write(f'{sample["point_clouds"][i].shape}, {sample["keypoints"][i].shape}')
             _, indices = neighbors.kneighbors(sample['point_clouds'][i][...,:3])
             segs.append(indices)
 
@@ -79,6 +81,8 @@ class AddPointsAroundJoint():
                 # with open('emm.txt', 'a') as f:
                 #     x = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][-1].shape[-1])).shape
                 #     f.write(f'{add_point.shape}, {x}')
+                if add_point.shape[-1] < pc.shape[-1]:
+                    add_point = np.concatenate([add_point, np.zeros(pc.shape[-1]-add_point.shape[-1])], axis=-1)
                 add_points = add_point[np.newaxis, :].repeat(self.num_added, axis=0) + np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][-1].shape[-1]))
                 pc = np.concatenate([pc, add_points], axis=0)
             new_pcs.append(pc)
@@ -300,6 +304,8 @@ class GetCentroid():
                 centroid = np.array([0., -0.012695, 2.3711])
             elif sample['dataset_name'] == 'mmfi':
                 centroid = np.array([-0.09487205, -0.09743616, 3.04673481])
+            elif sample['dataset_name'] == 'mmfi_lidar':
+                centroid = np.array([-0.02519154, -0.3084462, 2.99475336])
             elif sample['dataset_name'] == 'itop_side':
                 centroid = np.array([-0.0716, -0.25, 2.908])
             elif sample['dataset_name'] == 'itop_top':
@@ -349,10 +355,27 @@ class ToSimpleCOCO():
             transfer_func = mmbody2simplecoco
         elif sample['dataset_name'] == 'mri':
             transfer_func = coco2simplecoco
-        elif sample['dataset_name'] == 'mmfi':
+        elif sample['dataset_name'] in ['mmfi', 'mmfi_lidar']:
             transfer_func = mmfi2simplecoco
         elif sample['dataset_name'] in ['itop_side', 'itop_top']:
             transfer_func = itop2simplecoco
+        else:
+            raise ValueError('You should never reach here! dataset_name must be "mmbody", "mri", "mmfi", "itop_side" or "itop_top"')
+        
+        if isinstance(sample['keypoints'], list):
+            sample['keypoints'] = [transfer_func(kp) for kp in sample['keypoints']]
+        else:
+            sample['keypoints'] = transfer_func(sample['keypoints'])
+        return sample
+
+class ToITOP():
+    def __call__(self, sample):
+        if sample['dataset_name'] in ['mmfi', 'mmfi_lidar']:
+            transfer_func = mmfi2itop
+        elif sample['dataset_name'] == 'mmbody':
+            transfer_func = mmbody2itop
+        elif sample['dataset_name'] in ['itop_side', 'itop_top']:
+            transfer_func = lambda x: x
         else:
             raise ValueError('You should never reach here! dataset_name must be "mmbody", "mri", "mmfi", "itop_side" or "itop_top"')
         

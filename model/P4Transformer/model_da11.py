@@ -75,12 +75,6 @@ class PointReplacer(nn.Module):
             nn.GELU(),
             nn.Linear(dim, dim)
         )
-        self.enc_conf = nn.Sequential(
-            nn.Linear(3, dim),
-            nn.LayerNorm(dim),
-            nn.GELU(),
-            nn.Linear(dim, dim)
-        )
 
         self.trans = Transformer(dim, 4, heads, dim_head, dim*2)
         self.attn = PointAttention(dim, heads, dim_head)
