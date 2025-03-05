@@ -74,12 +74,14 @@ class MiliPointPreprocessor(Preprocessor):
         super().save('milipoint')
 
 class MMFiPreprocessor(Preprocessor):
-    def __init__(self, root_dir, out_dir):
+    def __init__(self, root_dir, out_dir, modality='mmwave'):
         super().__init__(root_dir, out_dir)
         self.action_p1 = ['2', '3', '4', '5', '13', '14', '17', '18', '19', '20', '21', '22', '23', '27']
+        assert modality in ['mmwave', 'lidar']
+        self.modality = modality
 
     def process(self):
-        dirs = sorted(glob(os.path.join(self.root_dir, 'all_data/E*/S*/A*')))
+        dirs = sorted(glob(os.path.join(self.root_dir, 'E*/S*/A*')))
 
         seq_idxs = np.arange(len(dirs))
         np.random.shuffle(seq_idxs)
@@ -94,17 +96,32 @@ class MMFiPreprocessor(Preprocessor):
             subject = int(d.split('/')[-2][1:])
             action = int(d.split('/')[-1][1:])
             pcs = []
-            keep_idxs = []
-            for bin_fn in sorted(glob(os.path.join(d.replace('all_data', 'filtered_mmwave'), "frame*.bin"))):
-                data_tmp = self._read_bin(bin_fn)
-                data_tmp[:, -1] = self._normalize_intensity(data_tmp[:, -1], 40.0)
-                data_tmp = data_tmp[:, [1, 2, 0, 3, 4]]
-                pcs.append(data_tmp)
-                keep_idx = int(os.path.basename(bin_fn).split('.')[0][5:]) - 1
-                keep_idxs.append(keep_idx)
-            kps = np.load(os.path.join(d, 'ground_truth.npy'))[keep_idxs,...]
+            if self.modality == 'mmwave':
+                keep_idxs = []
+                for bin_fn in sorted(glob(os.path.join(d.replace('MMFi_Dataset', 'filtered_mmwave'), "frame*.bin"))):
+                    data_tmp = self._read_bin(bin_fn)
+                    data_tmp[:, -1] = self._normalize_intensity(data_tmp[:, -1], 40.0)
+                    data_tmp = data_tmp[:, [1, 2, 0, 3, 4]]
+                    pcs.append(data_tmp)
+                    keep_idx = int(os.path.basename(bin_fn).split('.')[0][5:]) - 1
+                    keep_idxs.append(keep_idx)
+                kps = np.load(os.path.join(d, 'ground_truth.npy'))[keep_idxs,...]
+            else:
+                for bin_fn in sorted(glob(os.path.join(d, "lidar", "frame*.bin"))):
+                    data_tmp = self._read_bin(bin_fn)
+                    data_tmp = data_tmp[:, [1, 2, 0]]
+                    data_tmp[..., 0] = -data_tmp[..., 0]
+                    pcs.append(data_tmp)
+                kps = np.load(os.path.join(d, 'ground_truth.npy'))
+                kps[..., 0] = kps[..., 0]
+                kps[..., 1] = -kps[..., 1]- 0.2
+                kps[..., 2] = kps[..., 2] - 0.1
+            new_pcs = []
+            for pc, kp in zip(pcs, kps):
+                pc = self._filter_pcl(kp, pc, bound=0.2)
+                new_pcs.append(pc)
             self.results['sequences'].append({
-                'point_clouds': pcs,
+                'point_clouds': new_pcs,
                 'keypoints': kps,
                 'action': action
             })
@@ -164,15 +181,35 @@ class MMFiPreprocessor(Preprocessor):
                     self._add_to_split('train_xenv_p2', i)
 
     def save(self):
-        super().save('mmfi')
+        super().save('mmfi_' + self.modality)
 
     def _read_bin(self, bin_fn):
         with open(bin_fn, 'rb') as f:
             raw_data = f.read()
             data_tmp = np.frombuffer(raw_data, dtype=np.float64)
-            data_tmp = data_tmp.copy().reshape(-1, 5)
-            data_tmp[:, [3, 4]] = data_tmp[:, [4, 3]]
+            if self.modality == 'mmwave':
+                data_tmp = data_tmp.copy().reshape(-1, 5)
+                data_tmp[:, [3, 4]] = data_tmp[:, [4, 3]]
+            else:
+                data_tmp = data_tmp.copy().reshape(-1, 3)
         return data_tmp
+
+    def _filter_pcl(self, bounding_pcl: np.ndarray, target_pcl: np.ndarray, bound: float = 0.2, offset: float = 0):
+        """
+        Filter out the pcls of pcl_b that is not in the bounding_box of pcl_a
+        """
+        upper_bound = bounding_pcl[:, :3].max(axis=0) + bound
+        lower_bound = bounding_pcl[:, :3].min(axis=0) - bound
+        lower_bound[2] += offset
+
+        mask_x = (target_pcl[:, 0] >= lower_bound[0]) & (
+            target_pcl[:, 0] <= upper_bound[0])
+        mask_y = (target_pcl[:, 1] >= lower_bound[1]) & (
+            target_pcl[:, 1] <= upper_bound[1])
+        mask_z = (target_pcl[:, 2] >= lower_bound[2]) & (
+            target_pcl[:, 2] <= upper_bound[2])
+        index = mask_x & mask_y & mask_z
+        return target_pcl[index]
 
 class MMBodyPreprocessor(Preprocessor):
     def __init__(self, root_dir, out_dir):
@@ -399,7 +436,9 @@ if __name__ == '__main__':
     if dataset == 'milipoint':
         preprocessor = MiliPointPreprocessor(args.root_dir, args.out_dir)
     elif dataset == 'mmfi':
-        preprocessor = MMFiPreprocessor(args.root_dir, args.out_dir)
+        preprocessor = MMFiPreprocessor(args.root_dir, args.out_dir, 'mmwave')
+    elif dataset == 'mmfi_lidar':
+        preprocessor = MMFiPreprocessor(args.root_dir, args.out_dir, 'lidar')
     elif dataset == 'mmbody':
         preprocessor = MMBodyPreprocessor(args.root_dir, args.out_dir)
     elif dataset == 'mri':
