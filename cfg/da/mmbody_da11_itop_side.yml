@@ -44,7 +44,7 @@ sched_params:
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: P4Transformer
+model_name: P4TransformerDA11
 model_params:
   radius: 0.7
   nsamples: 32
@@ -57,8 +57,13 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
-  output_dim: 39
+  mem_size: 32
   features: 3
+  dim_proposal: 128
+  heads_proposal: 4
+  dim_head_proposal: 32
+  num_joints: 15 
+  num_proposal: 32
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -80,7 +85,7 @@ train_pipeline:
   - name: Normalize
     params:
       feat_scale: null
-  - name: ToSimpleCOCO
+  - name: ToITOP
     params: null
   - name: RemoveOutliers
     params: 
@@ -139,7 +144,7 @@ val_pipeline: &val_pipeline
   - name: GetCentroid
     params: 
       centroid_type: 'dataset_median'
-  - name: ToSimpleCOCO
+  - name: ToITOP
     params: null
   - name: RemoveOutliers
     params: 
