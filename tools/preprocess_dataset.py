@@ -334,6 +334,114 @@ class MRIPreprocessor(Preprocessor):
     def save(self):
         super().save('mri')
 
+class MMFiPreprocessor_lidar(Preprocessor):
+    def __init__(self, root_dir, out_dir):
+        super().__init__(root_dir, out_dir)
+        self.action_p1 = ['2', '3', '4', '5', '13', '14', '17', '18', '19', '20', '21', '22', '23', '27']
+
+    def process(self):
+        dirs = sorted(glob(os.path.join(self.root_dir, 'all_data/E*/S*/A*')))
+
+        seq_idxs = np.arange(len(dirs))
+        np.random.shuffle(seq_idxs)
+        num_train = int(len(seq_idxs) * 0.8)
+        num_val = int(len(seq_idxs) * 0.1)
+        self.results['splits']['train_rdn_p3'] = sorted(seq_idxs[:num_train])
+        self.results['splits']['val_rdn_p3'] = sorted(seq_idxs[num_train:num_train+num_val])
+        self.results['splits']['test_rdn_p3'] = sorted(seq_idxs[num_train+num_val:])
+
+        for i, d in tqdm(enumerate(dirs)):
+            # the structure of d: all_data/E*/S*/A*
+            d = d.replace("\\", "/")
+            env = int(d.split('/')[-3][1:])
+            subject = int(d.split('/')[-2][1:])
+            action = int(d.split('/')[-1][1:])
+            pcs = []
+            keep_idxs = []
+            # TODO: Use lidar path
+            for bin_fn in sorted(glob(os.path.join(d, "lidar/frame*.bin"))):
+                data_tmp = self._read_bin(bin_fn)
+                # data_tmp[:, -1] = self._normalize_intensity(data_tmp[:, -1], 40.0)
+                # make it [x, y, z, feature_1, feature_2]
+                # data_tmp = data_tmp[:, [1, 2, 0, 3, 4]]
+                # TODO: Check
+                data_tmp = data_tmp[:, [1, 2, 0]]
+                data_tmp[:, 1:2] = -data_tmp[:, 1:2]
+                pcs.append(data_tmp)
+                keep_idx = int(os.path.basename(bin_fn).split('.')[0][5:]) - 1
+                keep_idxs.append(keep_idx)
+            kps = np.load(os.path.join(d, 'ground_truth.npy'))[keep_idxs,...]  # I cannot find this file
+            self.results['sequences'].append({
+                'point_clouds': pcs,
+                'keypoints': kps,   # ground truth
+                'action': action
+            })
+
+            if i in self.results['splits']['train_rdn_p3']:
+                if action in self.action_p1:
+                    self._add_to_split('train_rdn_p1', i)
+                else:
+                    self._add_to_split('train_rdn_p2', i)
+            elif i in self.results['splits']['val_rdn_p3']:
+                if action in self.action_p1:
+                    self._add_to_split('val_rdn_p1', i)
+                else:
+                    self._add_to_split('val_rdn_p2', i)
+            else:
+                if action in self.action_p1:
+                    self._add_to_split('test_rdn_p1', i)
+                else:
+                    self._add_to_split('test_rdn_p2', i)
+
+            if subject % 5 == 0:
+                self._add_to_split('test_xsub_p3', i)
+                if action in self.action_p1:
+                    self._add_to_split('test_xsub_p1', i)
+                else:
+                    self._add_to_split('test_xsub_p2', i)
+            elif subject % 5 == 1:
+                self._add_to_split('val_xsub_p3', i)
+                if action in self.action_p1:
+                    self._add_to_split('val_xsub_p1', i)
+                else:
+                    self._add_to_split('val_xsub_p2', i)
+            else:
+                self._add_to_split('train_xsub_p3', i)
+                if action in self.action_p1:
+                    self._add_to_split('train_xsub_p1', i)
+                else:
+                    self._add_to_split('train_xsub_p2', i)
+
+            if env == 4:
+                self._add_to_split('test_xenv_p3', i)
+                if action in self.action_p1:
+                    self._add_to_split('test_xenv_p1', i)
+                else:
+                    self._add_to_split('test_xenv_p2', i)
+            elif env == 3:
+                self._add_to_split('val_xenv_p3', i)
+                if action in self.action_p1:
+                    self._add_to_split('val_xenv_p1', i)
+                else:
+                    self._add_to_split('val_xenv_p2', i)
+            else:
+                self._add_to_split('train_xenv_p3', i)
+                if action in self.action_p1:
+                    self._add_to_split('train_xenv_p1', i)
+                else:
+                    self._add_to_split('train_xenv_p2', i)
+
+    def save(self):
+        super().save('mmfi_lidar')
+
+    def _read_bin(self, bin_fn):
+        with open(bin_fn, 'rb') as f:
+            raw_data = f.read()
+            data_tmp = np.frombuffer(raw_data, dtype=np.float64)
+            # TODO:
+            data_tmp = data_tmp.copy().reshape(-1, 3)
+            # data_tmp[:, [3, 4]] = data_tmp[:, [4, 3]]
+        return data_tmp
 class ITOPPreprocessor(Preprocessor):
     def __init__(self, root_dir, out_dir, view):
         super().__init__(root_dir, out_dir)
@@ -443,6 +551,8 @@ if __name__ == '__main__':
         preprocessor = MMBodyPreprocessor(args.root_dir, args.out_dir)
     elif dataset == 'mri':
         preprocessor = MRIPreprocessor(args.root_dir, args.out_dir)
+    elif dataset == 'mmfi_lidar':
+        preprocessor == MMFiPreprocessor_lidar(args.root_dir, args.out_dir)
     elif dataset == 'itop_side':
         preprocessor = ITOPPreprocessor(args.root_dir, args.out_dir, 'side')
     elif dataset == 'itop_top':

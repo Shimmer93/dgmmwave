@@ -350,6 +350,30 @@ class Flip():
         return sample
     
 class ToSimpleCOCO():
+    """
+    A transformation class to convert keypoints from different skeleton types to the SimpleCOCO format.
+
+    Methods
+    -------
+    __call__(sample)
+        Converts the keypoints in the sample to the SimpleCOCO format based on the skeleton type.
+
+    Parameters
+    ----------
+    sample : dict
+        A dictionary containing the key 'skeleton_type' which specifies the type of skeleton 
+        ('mmbody', 'mri', or 'mmfi') and the key 'keypoints' which contains the keypoints data.
+
+    Returns
+    -------
+    dict
+        The input sample dictionary with the 'keypoints' converted to the SimpleCOCO format.
+
+    Raises
+    ------
+    ValueError
+        If the 'skeleton_type' in the sample is not 'mmbody', 'mri', or 'mmfi'.
+    """
     def __call__(self, sample):
         if sample['dataset_name'] == 'mmbody':
             transfer_func = mmbody2simplecoco
