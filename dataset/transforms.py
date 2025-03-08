@@ -4,7 +4,7 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
 
-from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco, itop2simplecoco, mmfi2itop, mmbody2itop
+from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco, itop2simplecoco, mmfi2itop, mmbody2itop, ITOPSkeleton
 
 def log(x):
     print(x)
@@ -28,24 +28,54 @@ class AddNoisyPoints():
         return sample
 
 class GenerateSegmentationGroundTruth():
-    def __call__(self, sample):
-        segs = []
-        for i in range(len(sample['keypoints'])):
-            neighbors = NearestNeighbors(n_neighbors=1).fit(sample['keypoints'][i])
-            with open('emm.txt', 'a') as f:
-                f.write(f'{sample["point_clouds"][i].shape}, {sample["keypoints"][i].shape}')
-            _, indices = neighbors.kneighbors(sample['point_clouds'][i][...,:3])
-            segs.append(indices)
+    def __init__(self, padding=0.2):
+        self.padding = padding
 
-        sample['segmentations'] = segs
+    def __call__(self, sample):
+        if 'keypoints' not in sample:
+            sample['segmented'] = False
+            return sample
+        
+        for i in range(len(sample['keypoints'])):
+            # mask = np.zeros(sample['point_clouds'][i].shape[0], dtype=np.bool)
+            # for bone in ITOPSkeleton.bones:
+            #     mask |= self._mask_single_bone(sample['point_clouds'][i][...,:3], sample['keypoints'][i], bone, self.padding)
+            # sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i], mask[...,np.newaxis].astype(sample['point_clouds'][i].dtype)], axis=-1)
+            neighbors = NearestNeighbors(radius=self.padding).fit(sample['keypoints'][i])
+            indices = neighbors.radius_neighbors(sample['point_clouds'][i][...,:3], return_distance=False)
+            sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i], np.array([len(idx) > 0 for idx in indices], dtype=np.float32)[...,np.newaxis]], axis=-1)
+
+            neighbors = NearestNeighbors(n_neighbors=1).fit(sample['keypoints'][i])
+            _, indices = neighbors.kneighbors(sample['point_clouds'][i][...,:3])
+            sample['point_clouds'][i][..., -1:] *= (indices + 1).astype(sample['point_clouds'][i].dtype)
+            # new_pcs.append(np.concatenate([sample['point_clouds'][i], indices.astype(sample['point_clouds'][i].dtype)], axis=-1))
+
+        sample['segmented'] = True
         return sample
+
+    def _mask_single_bone(self, point_cloud, keypoints, bone, padding=0.1):
+        start = keypoints[bone[0]]
+        end = keypoints[bone[1]]
+        vec = end - start
+        length = np.linalg.norm(vec)
+        vec /= length
+        start -= vec * padding
+        end += vec * padding
+        mask_cylinder = np.linalg.norm(np.cross(point_cloud - start, point_cloud - end), axis=-1) / length < padding
+        mask_start = np.dot(point_cloud - start, vec) > 0
+        mask_end = np.dot(point_cloud - end, -vec) > 0
+        mask = mask_cylinder & mask_start & mask_end # The mask is a cylinder with padding around the bone
+        return mask
 
 class DropPointsAtSegmentedJoints():
     def __init__(self, max_num2drop=3):
         self.max_num2drop = max_num2drop
 
-    def __call__(self, sample):
-        assert 'segmentations' in sample
+    def __call__(self, sample):        
+        assert 'segmented' in sample
+        if not sample['segmented']:
+            return sample
+        
         num_joints = sample['keypoints'][0].shape[0]
         num2drop = np.random.randint(1, self.max_num2drop)
         idxs2drop = np.random.choice(num_joints, num2drop, replace=False)
@@ -53,10 +83,8 @@ class DropPointsAtSegmentedJoints():
         new_pcs = []
         for i in range(len(sample['keypoints'])):
             pc = sample['point_clouds'][i]
-            seg = sample['segmentations'][i]
-            mask = np.isin(seg, idxs2drop)[:, 0]
-            # with open('emm.txt', 'a') as f:
-            #     f.write(f'{mask.shape}, {pc.shape}')
+            seg = sample['point_clouds'][i][..., -1:]
+            mask = np.isin(seg, idxs2drop+1)[:, 0]
             new_pcs.append(pc[~mask, :] if np.any(~mask) else pc)
 
         sample['point_clouds'] = new_pcs
@@ -78,9 +106,6 @@ class AddPointsAroundJoint():
             pc = sample['point_clouds'][i]
             for idx in idxs2add:
                 add_point = sample['keypoints'][i][idx]
-                # with open('emm.txt', 'a') as f:
-                #     x = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][-1].shape[-1])).shape
-                #     f.write(f'{add_point.shape}, {x}')
                 if add_point.shape[-1] < pc.shape[-1]:
                     add_point = np.concatenate([add_point, np.zeros(pc.shape[-1]-add_point.shape[-1])], axis=-1)
                 add_points = add_point[np.newaxis, :].repeat(self.num_added, axis=0) + np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][-1].shape[-1]))

@@ -29,6 +29,16 @@ def create_dataset(dataset_name, dataset_params, pipeline):
     collate_fn = dataset_class.collate_fn
     return dataset, collate_fn
 
+def create_ref_dataset(dataset_params, pipeline, ref_pipeline):
+    if dataset_params is None:
+        dataset_params = {}
+    transform = PipelineTransform(pipeline)
+    ref_transform = PipelineTransform(ref_pipeline)
+    dataset_class = import_with_str('dataset', 'ReferenceDataset')
+    dataset = dataset_class(transform=transform, ref_transform=ref_transform, **dataset_params)
+    collate_fn = dataset_class.collate_fn
+    return dataset, collate_fn
+
 class LitDataModule(pl.LightningDataModule):
 
     def __init__(self, hparams):
@@ -37,7 +47,10 @@ class LitDataModule(pl.LightningDataModule):
 
     def setup(self, stage):
         if stage == 'fit' or stage is None:
-            self.train_dataset, self.train_collate_fn = create_dataset(self.hparams.train_dataset['name'], self.hparams.train_dataset['params'], self.hparams.train_pipeline)
+            if self.hparams.train_dataset['name'] == 'ReferenceDataset':
+                self.train_dataset, self.train_collate_fn = create_ref_dataset(self.hparams.train_dataset['params'], self.hparams.train_pipeline, self.hparams.ref_pipeline)
+            else:
+                self.train_dataset, self.train_collate_fn = create_dataset(self.hparams.train_dataset['name'], self.hparams.train_dataset['params'], self.hparams.train_pipeline)
             self.val_dataset, self.val_collate_fn = create_dataset(self.hparams.val_dataset['name'], self.hparams.val_dataset['params'], self.hparams.val_pipeline)
         elif stage == 'test':
             self.test_dataset, self.test_collate_fn = create_dataset(self.hparams.test_dataset['name'], self.hparams.test_dataset['params'], self.hparams.test_pipeline)

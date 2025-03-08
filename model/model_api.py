@@ -141,7 +141,7 @@ class LitModel(pl.LightningModule):
         elif self.hparams.model_name in ['P4TransformerDA11']:
             if self.hparams.mode == 'train':
                 x_ref = batch['ref_point_clouds']
-                y_hat, y_hat2, l_conf, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
+                y_hat, y_hat2, l_conf, l_rec, l_rec_ref, l_mem, l_prec, l_prec_ref = self.model((x, x_ref), mode='train')
                 l_pc = self.loss(y_hat, y)
                 l_pc2 = self.loss(y_hat2, y.clone())
                 # B, T, L, C = x_new_hat.shape
@@ -160,7 +160,7 @@ class LitModel(pl.LightningModule):
                 # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
                 # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
                 loss = l_pc + l_pc2 + self.hparams.w_conf * l_conf + self.hparams.w_rec * (l_rec + l_rec_ref) + \
-                    self.hparams.w_mem * l_mem # + self.hparams.w_dist * l_dist # + self.hparams.w_prec * l_prec  # + w_con * l_con
+                    self.hparams.w_mem * l_mem + self.hparams.w_prec * (l_prec + l_prec_ref) # + self.hparams.w_dist * l_dist # + self.hparams.w_prec * l_prec  # + w_con * l_con
                 losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_conf': l_conf, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem} #, 'l_dist': l_dist}
         elif self.hparams.model_name == 'PoseTransformer':
             #TODO: Implement the loss function of posetran

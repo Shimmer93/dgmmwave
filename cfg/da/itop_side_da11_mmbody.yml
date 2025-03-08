@@ -22,7 +22,7 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/itop_side.pkl
+    data_path: data/mmbody.pkl
     split: test
 # --------------------------------------
 # Optimizer parameters
@@ -44,7 +44,7 @@ sched_params:
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: P4TransformerDA9
+model_name: P4TransformerDA11
 model_params:
   radius: 0.7
   nsamples: 32
@@ -63,7 +63,7 @@ model_params:
   heads_proposal: 4
   dim_head_proposal: 16
   num_joints: 15 
-  num_proposal: 32
+  num_proposal: 128
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -72,6 +72,8 @@ loss_params: null
 # weight for auxiliary losses
 w_rec: 0.001
 w_mem: 0.001
+w_conf: 0.1
+w_prec: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -104,7 +106,8 @@ train_pipeline:
       num_added: 32
     prob: 0.5
   - name: GenerateSegmentationGroundTruth
-    params: null
+    params:
+      padding: 0.25
   - name: DropPointsAtSegmentedJoints
     params:
       max_num2drop: 6
@@ -149,7 +152,7 @@ val_pipeline: &val_pipeline
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
-      radius: 2.0
+      radius: 1.5
   - name: Normalize
     params:
       feat_scale: null
@@ -164,3 +167,4 @@ val_pipeline: &val_pipeline
   - name: ToTensor
     params: null
 test_pipeline: *val_pipeline
+ref_pipeline: *val_pipeline

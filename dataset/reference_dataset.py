@@ -8,10 +8,10 @@ from itertools import chain
 from dataset.temporal_dataset import TemporalDataset
 
 class ReferenceDataset(TemporalDataset):
-    def __init__(self, data_path, ref_data_path, transform=None, split='train', ref_split='train'):
+    def __init__(self, data_path, ref_data_path, transform=None, ref_transform=None, split='train', ref_split='train'):
         super().__init__(data_path, transform, split)
         self.ref_data_path = ref_data_path
-        self.ref_transform = deepcopy(transform)
+        self.ref_transform = ref_transform
 
         with open(ref_data_path, 'rb') as f:
             self.ref_all_data = pickle.load(f)

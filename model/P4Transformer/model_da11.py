@@ -174,10 +174,10 @@ class PointReplacer(nn.Module):
             nn.Linear(dim, dim)
         )
 
-        self.trans = Transformer(dim, 4, heads, dim_head, dim*2)
-        self.attn = PointAttention(dim, heads, dim_head)
+        self.attn_source = SelfAttentionMemoryBank(dim, num_to_add)
+        # self.attn_target = SelfAttentionMemoryBank(dim, num_to_add)
 
-        self.dec = nn.Sequential(
+        self.dec_pc = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, dim),
             nn.GELU(),
@@ -193,32 +193,65 @@ class PointReplacer(nn.Module):
 
         self.num_to_add = num_to_add
 
-    def forward(self, points, proposal_embed):
+    def forward(self, points, target=False):
         B, L, N, C = points.shape
         points = points.reshape(B*L, N, C)
 
-        points_add = self.enc(points)
-        points_add = self.trans(points_add)
-        conf = self.dec_conf(points_add)
-        points_add = self.attn(points_add, proposal_embed)
-        points_add = self.dec(points_add)
+        feat = self.enc(points)
+        # if target:
+        #     feat_mem = self.attn_target(feat)
+        # else:
+        feat_mem = self.attn_source(feat)
 
+        conf = self.dec_conf(feat_mem)
         conf_ = conf.detach().clone()
+
+        points_rec = self.dec_pc(feat_mem)
+        # print(points_rec.shape, points.shape)
+        l_prec = F.mse_loss(points_rec[:, :N, :], points)
+
         masks_keep = []
         for i in range(B*L):
             idx_to_remove = conf_[i, :, 0].topk(self.num_to_add, largest=False).indices
-            mask_keep = torch.ones(N, dtype=torch.bool, device=points.device)
+            mask_keep = torch.ones(N+self.num_to_add, dtype=torch.bool, device=points.device)
             mask_keep[idx_to_remove] = False
             masks_keep.append(mask_keep)
         masks_keep = torch.stack(masks_keep, dim=0).unsqueeze(-1)
-        points = points * masks_keep
+        points_new = torch.cat([points, points_rec[:, N:, :]], dim=1)
+        points_masked = points_new * masks_keep
 
-        points = torch.cat([points, points_add], dim=1)
-        points = points.reshape(B, L, -1, C)
+        # points_masked = points_rec[:, :N, :]
 
-        return points, conf.reshape(B, L, -1, 1)
+        points_masked = points_masked.reshape(B, L, -1, C)
+        conf = conf[:, :N, :].reshape(B, L, -1, 1)
+
+        # print(points_masked.shape, conf.shape)
+
+        return points_masked, conf.reshape(B, L, -1, 1), l_prec
 
 
+class SelfAttentionMemoryBank(nn.Module):
+    def __init__(self, dim, mem_size):
+        super().__init__()
+        self.mem = nn.Parameter(torch.FloatTensor(1, dim, mem_size).normal_(0.0, 1.0))
+
+        self.to_qkv = nn.Linear(dim, dim*3, bias=False)
+
+    def forward(self, x):
+        B, N, D = x.shape
+        _, _, M = self.mem.shape
+
+        m = self.mem.repeat(B, 1, 1)
+        m_key = m.transpose(1, 2)
+
+        xm = torch.cat([x, m_key], dim=1)
+        q, k, v = self.to_qkv(xm).chunk(3, dim=-1) # [B, N+M, D]
+
+        logits = torch.bmm(k, q.transpose(1, 2)) / sqrt(D) # [B, N+M, N+M]
+        x_new = torch.bmm(F.softmax(logits, dim=1), v) # [B, N+M, D]
+
+        return x_new
+    
 class AttentionMemoryBank(nn.Module):
     def __init__(self, dim, mem_size):
         super().__init__()
@@ -316,8 +349,8 @@ class P4TransformerDA11(nn.Module):
 
         self.point_replacer = PointReplacer(dim_proposal, heads_proposal, dim_head_proposal, num_proposal)
 
-        self.proposal_embed_s = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
-        self.proposal_embed_t = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
+        # self.proposal_embed_s = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
+        # self.proposal_embed_t = nn.Parameter(torch.randn(1, num_proposal, dim_proposal))
 
         self.model_s = Model(radius, nsamples, spatial_stride, temporal_kernel_size, temporal_stride, 
                              emb_relu, dim, depth, heads, dim_head, dim_proposal, heads_proposal, 
@@ -337,7 +370,7 @@ class P4TransformerDA11(nn.Module):
             return self.forward_train(input)
         
     def forward_inference(self, input):
-        input, _ = self.point_replacer(input[...,:3], self.proposal_embed_s)
+        input, _, _ = self.point_replacer(input[...,:3], target=True)
         embedding = self.model_s.encode(input)
         output0 = self.model_s.transformer(embedding)
         output = self.model_t.mem(output0) # [B, L*n, C]
@@ -349,9 +382,9 @@ class P4TransformerDA11(nn.Module):
         # print(input_s.shape, input_t.shape)
         # self.proposal_embed_s.requires_grad_(True)
         # self.point_proposer.mem.requires_grad_(True)
-        points_s, conf_s = self.point_replacer(input_s[...,:3], self.proposal_embed_s)
+        points_s, conf_s, l_prec_s = self.point_replacer(input_s[...,:3], target=False)
         # self.point_proposer.mem.requires_grad_(False)
-        points_t, _ = self.point_replacer(input_t[...,:3], self.proposal_embed_s)
+        points_t, _, l_prec_t = self.point_replacer(input_t[...,:3], target=True)
         # self.proposal_embed_s.requires_grad_(False)
         # print(conf_s.shape, input_s.shape, (input_s[...,-1:] > 0).sum().item(), (input_s[...,-1:] == 0).sum().item())
         # print(F.sigmoid(conf_s).max().item(), F.sigmoid(conf_s).min().item(), F.sigmoid(conf_s).mean().item())
@@ -387,4 +420,4 @@ class P4TransformerDA11(nn.Module):
         output_t2 = self.model_s.mem(output0_t2)
         output_t2 = self.model_s.decode(output_t2)
 
-        return output_s, output_s2, l_conf, l_rec_s, l_rec_t, l_mem #, points_new_s, points_new_t
+        return output_s, output_s2, l_conf, l_rec_s, l_rec_t, l_mem, l_prec_s, l_prec_t #, points_new_s, points_new_t
