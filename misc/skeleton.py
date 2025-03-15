@@ -166,6 +166,9 @@ def mmfi2simplecoco(joints):
 def milipoint2simplecoco(joints):
     return joints[..., [0, 5, 2, 6, 3, 7, 4, 11, 8, 12, 9, 13, 10], :]
 
+def smpl2simplecoco(joints):
+    return joints[..., [15, 16, 17, 18, 19, 20, 21, 1, 2, 4, 5, 7, 8], :]
+
 def itop2simplecoco(joints):
     return joints[..., [0, 3, 2, 5, 4, 7, 6, 10, 9, 12, 11, 14, 13], :]
 
@@ -173,7 +176,6 @@ def mmfi2itop(joints):
     return joints[..., [9, 8, 14, 11, 15, 12, 16, 13, 7, 1, 4, 2, 5, 3, 6], :]
 
 def mmbody2itop(joints):
-    joints[..., 15, :] = (joints[..., 15, :] + joints[..., 12, :]) / 2
     return joints[..., [15, 12, 17, 16, 19, 18, 21, 20, 6, 2, 1, 5, 4, 8, 7], :]
 
 def simplecoco2smpl(joints):

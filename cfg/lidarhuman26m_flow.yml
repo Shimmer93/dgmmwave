@@ -9,11 +9,10 @@ epochs: &epochs 300
 # Dataset parameters
 # --------------------------------------
 train_dataset:
-  name: ReferenceDataset
+  name: TemporalDataset
   params:
-    data_path: &data_path data/itop_side.pkl
+    data_path: &data_path data/lidarhuman26m.pkl
     split: [train, val]
-    ref_data_path: data/mmbody.pkl
 val_dataset:
   name: TemporalDataset
   params:
@@ -22,14 +21,14 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
-    split: test
+    data_path: data/mmfi.pkl
+    split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
 optim_name: AdamW
 optim_params:
-  lr: 0.00001
+  lr: 0.0001
   weight_decay: 0.00001
 # --------------------------------------
 # Learning rate scheduler parameters
@@ -38,13 +37,13 @@ sched_name: LinearWarmupCosineAnnealingLR
 sched_params:
   warmup_epochs: 20
   max_epochs: *epochs
-  warmup_start_lr: 0.000001
-  eta_min: 0.000001
+  warmup_start_lr: 0.00001
+  eta_min: 0.00001
 # --------------------------------------
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: P4TransformerDA11
+model_name: P4Transformer
 model_params:
   radius: 0.7
   nsamples: 32
@@ -57,13 +56,8 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
-  mem_size: 32
+  output_dim: 45
   features: 3
-  dim_proposal: 64
-  heads_proposal: 4
-  dim_head_proposal: 16
-  num_joints: 15 
-  num_proposal: 128
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -72,19 +66,17 @@ loss_params: null
 # weight for auxiliary losses
 w_rec: 0.001
 w_mem: 0.001
-w_conf: 0.1
-w_prec: 0.001
-w_dist: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
 train_pipeline:
   - name: UniformSample
     params: 
-      clip_len: 5
+      pad_type: 'start'
+      clip_len: 6
   - name: GetCentroid
     params: 
-      centroid_type: 'dataset_median'
+      centroid_type: 'median'
   - name: Normalize
     params:
       feat_scale: null
@@ -97,26 +89,22 @@ train_pipeline:
   - name: AddNoisyPoints
     params:
       add_std: 0.2
-      num_added: 32
+      num_added: 8
       zero_centered: false
     prob: 0.5
-  - name: AddPointsAroundJoint
-    params:
-      add_std: 0.2
-      max_num2add: 3
-      num_added: 32
-    prob: 0.5
+  # - name: AddPointsAroundJoint
+  #   params:
+  #     add_std: 0.2
+  #     max_num2add: 3
+  #     num_added: 8
+  #   prob: 0.5
   - name: GenerateSegmentationGroundTruth
-    params:
+    params: 
       padding: 0.25
-  - name: DropPointsAtSegmentedJoints
+  - name: ConvertToMMWavePointCloud
     params:
-      max_num2drop: 6
-    prob: 0.5
-  - name: RandomJitter
-    params:
-      jitter_std: 0.001
-    prob: 0.5
+      dist_threshold: 0.01
+      default_num_points: 4
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -124,8 +112,9 @@ train_pipeline:
     prob: 0.5
   - name: RandomRotate
     params:
-      angle_min: -0.3141592653589793
-      angle_max: 0.3141592653589793
+      deg: true
+      angle_min: -10
+      angle_max: 10
     prob: 0.5
   - name: RandomTranslate
     params:
@@ -134,38 +123,49 @@ train_pipeline:
   - name: ReduceKeypointLen
     params:
       only_one: true
-      keep_type: 'middle'
+      keep_type: 'end'
       frame_to_reduce: 0
   - name: Pad
     params:
-      max_len: 1024
+      max_len: 256
+  - name: RandomJitter
+    params:
+      jitter_std: 0.05
+    prob: 0.5
   - name: ToTensor
     params: null
 val_pipeline: &val_pipeline
   - name: UniformSample
-    params: 
-      clip_len: 5
+    params:
+      pad_type: 'start'
+      clip_len: 6
   - name: GetCentroid
     params: 
-      centroid_type: 'dataset_median'
+      centroid_type: 'median'
   - name: ToITOP
     params: null
+  - name: Normalize
+    params:
+      feat_scale: null
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
       radius: 1.5
-  - name: Normalize
+  - name: GenerateSegmentationGroundTruth
+    params: 
+      padding: 0.25
+  - name: ConvertToMMWavePointCloud
     params:
-      feat_scale: null
+      dist_threshold: 0.01
+      default_num_points: 4
   - name: ReduceKeypointLen
     params:
       only_one: true
-      keep_type: 'middle'
+      keep_type: 'end'
       frame_to_reduce: 0
   - name: Pad
     params:
-      max_len: 1024
+      max_len: 256
   - name: ToTensor
     params: null
 test_pipeline: *val_pipeline
-ref_pipeline: *val_pipeline

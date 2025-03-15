@@ -22,6 +22,11 @@ def get_edges(skeleton_type):
             [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6], [1, 7],
             [2, 8], [7, 9], [8, 10], [9, 11], [10, 12]
         ]
+    elif skeleton_type == 'itop':
+        edges = [
+            [14, 12], [12, 10], [13, 11], [11, 9], [10, 8], [9, 8], [8, 1], [1, 0], [7, 5], [5, 3], 
+            [3, 1], [6, 4], [4, 2], [2, 1]
+        ]
     else:
         raise ValueError(f'Unknown skeleton type: {skeleton_type}')
     

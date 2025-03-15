@@ -5,7 +5,7 @@ from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import matplotlib.pyplot as plt
 import os
 import pickle
-# from pytorch3d.loss import chamfer_distance
+from pytorch3d.loss import chamfer_distance
 
 # import wandb
 # import tensorboard
@@ -144,8 +144,9 @@ class LitModel(pl.LightningModule):
                 y_hat, y_hat2, l_conf, l_rec, l_rec_ref, l_mem, l_prec, l_prec_ref = self.model((x, x_ref), mode='train')
                 l_pc = self.loss(y_hat, y)
                 l_pc2 = self.loss(y_hat2, y.clone())
-                # B, T, L, C = x_new_hat.shape
-                # l_dist = torch.cdist(x_new[:, 2], y[:, 0]).min(dim=-1)[0].mean()
+                # l_pc2 = self.loss(y_hat2 - y_hat2.mean(dim=2, keepdim=True), y.clone() - y.clone().mean(dim=2, keepdim=True))
+                # B, T, L, C = x_ref.shape
+                # l_dist = torch.cdist(y_ref_hat[:, 0], x_ref[:, 2]).min(dim=-1)[0].mean()
                 # l_dist = 0
                 # for i in range(B):
                 #     for j in range(T):
@@ -154,14 +155,15 @@ class LitModel(pl.LightningModule):
                 #         conf_ij = x[i, j][..., -1]
                 #         l_dist += chamfer_distance(x_new_ij.reshape(1, -1, C).to(x.dtype), x_ij[conf_ij > 0].reshape(1, -1, C).detach())[0]
                 # l_dist /= B * T
-                # l_dist = chamfer_distance(x_new_hat.reshape(-1, L, C).to(x.dtype), x[..., :C].reshape(-1, L, C).detach())[0] + \
+                # l_dist = chamfer_distance(y_ref_hat.reshape(B, -1, 3).to(x.dtype), x_ref[:, 2, :, :3].reshape(-1, L, C).detach())[0]# + \
                 #             chamfer_distance(x_new_ref_hat.reshape(-1, L, C).to(x.dtype), x_ref[..., :C].reshape(-1, L, C).detach())[0]
                 # l_dist_ref, _ = chamfer_distance(x_new_ref.reshape(-1, L, C).to(x.dtype), x_ref[..., :C].reshape(-1, L, C).detach())
                 # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
                 # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
-                loss = l_pc + l_pc2 + self.hparams.w_conf * l_conf + self.hparams.w_rec * (l_rec + l_rec_ref) + \
-                    self.hparams.w_mem * l_mem + self.hparams.w_prec * (l_prec + l_prec_ref) # + self.hparams.w_dist * l_dist # + self.hparams.w_prec * l_prec  # + w_con * l_con
-                losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_conf': l_conf, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem} #, 'l_dist': l_dist}
+                loss = l_pc + l_pc2 + self.hparams.w_conf * l_conf + self.hparams.w_rec * (l_rec_ref) + \
+                    self.hparams.w_prec * (l_prec + l_prec_ref) # + self.hparams.w_dist * l_dist # + self.hparams.w_prec * l_prec  # + w_con * l_con self.hparams.w_mem * l_mem + 
+                losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_conf': l_conf, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 
+                          'l_prec': l_prec, 'l_prec_ref': l_prec_ref}
         elif self.hparams.model_name == 'PoseTransformer':
             #TODO: Implement the loss function of posetran
             # sformer

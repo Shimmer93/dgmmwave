@@ -3,6 +3,7 @@ import torch
 from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
+# from pytorch3d.loss import chamfer_distance
 
 from misc.skeleton import coco2simplecoco, mmbody2simplecoco, mmfi2simplecoco, itop2simplecoco, mmfi2itop, mmbody2itop, ITOPSkeleton
 
@@ -66,6 +67,97 @@ class GenerateSegmentationGroundTruth():
         mask_end = np.dot(point_cloud - end, -vec) > 0
         mask = mask_cylinder & mask_start & mask_end # The mask is a cylinder with padding around the bone
         return mask
+
+class ConvertToMMWavePointCloud():
+    def __init__(self, dist_threshold=0.1, default_num_points=32):
+        self.dist_threshold = dist_threshold
+        self.default_num_points = default_num_points
+
+    def __call__(self, sample):
+        if isinstance(sample['keypoints'], list):
+            sample['keypoints'] = np.stack(sample['keypoints'])
+
+        kps0 = sample['keypoints'][:-1]
+        kps1 = sample['keypoints'][1:]
+        kps_dist = np.linalg.norm(kps0 - kps1, axis=-1)
+        mask = kps_dist > self.dist_threshold
+
+        new_pcs = []
+        for i in range(len(sample['keypoints']) - 1):
+            pc0 = sample['point_clouds'][i]
+            
+            num_points = 0
+            new_pc = []
+            for j in range(sample['keypoints'].shape[1]):
+                pc0_j = pc0[sample['point_clouds'][i][..., -1] == j+1]
+                if mask[i, j]:
+                    new_pc.append(pc0_j)
+                    num_points += len(pc0_j)
+
+            if num_points == 0:
+                random_idxs = np.random.choice(pc0.shape[0], self.default_num_points)
+                new_pc.append(pc0[random_idxs])
+            new_pc = np.concatenate(new_pc)
+            new_pcs.append(new_pc)
+
+        sample['point_clouds'] = new_pcs
+        return sample
+
+# class ConvertToMMWavePointCloud():
+#     def __init__(self, dist_threshold=0.1, default_num_points=32):
+#         self.dist_threshold = dist_threshold
+#         self.default_num_points = default_num_points
+
+#     def __call__(self, sample):
+#         N = len(sample['point_clouds'])
+#         J = sample['keypoints'][0].shape[0]
+
+#         max_len = max([pc.shape[0] for pc in sample['point_clouds']])
+
+#         pc0_tensor = torch.zeros((N - 1, J, max_len, 4))
+#         pc1_tensor = torch.zeros((N - 1, J, max_len, 4))
+#         pc0_lens = torch.zeros((N - 1, J), dtype=torch.long)
+#         pc1_lens = torch.zeros((N - 1, J), dtype=torch.long)
+
+#         for i in range(N - 1):
+#             pc0 = sample['point_clouds'][i]
+#             pc1 = sample['point_clouds'][i+1]
+#             seg0 = sample['point_clouds'][i][..., -1:]
+#             seg1 = sample['point_clouds'][i+1][..., -1:]
+#             for j in range(J):
+#                 pc0_j = pc0[seg0[:, 0] == j+1]
+#                 pc1_j = pc1[seg1[:, 0] == j+1]
+#                 pc0_tensor[i, j, :pc0_j.shape[0]] = torch.from_numpy(pc0_j).float()
+#                 pc1_tensor[i, j, :pc1_j.shape[0]] = torch.from_numpy(pc1_j).float()
+#                 pc0_lens[i, j] = pc0_j.shape[0]
+#                 pc1_lens[i, j] = pc1_j.shape[0]
+
+#         dists = chamfer_distance(pc0_tensor.reshape(-1, max_len, 4)[..., :3], 
+#                                  pc1_tensor.reshape(-1, max_len, 4)[..., :3], 
+#                                  x_lengths=pc0_lens.reshape(-1), 
+#                                  y_lengths=pc1_lens.reshape(-1),
+#                                  batch_reduction=None)[0].reshape(N - 1, J)
+#         mask = dists > self.dist_threshold
+
+#         new_pcs = []
+#         for i in range(N - 1):
+#             pc0 = sample['point_clouds'][i]
+
+#             new_pc = []
+#             for j in range(J):
+#                 pc0_j = pc0_tensor[i, j, :int(pc0_lens[i, j])].numpy()
+#                 pc1_j = pc1_tensor[i, j, :int(pc1_lens[i, j])].numpy()
+#                 if mask[i, j]:
+#                     new_pc.append(pc0_j)
+
+#             if len(new_pc) == 0:
+#                 random_idxs = np.random.choice(pc0.shape[0], self.default_num_points)
+#                 new_pc.append(pc0[random_idxs])
+#             new_pc = np.concatenate(new_pc)
+#             new_pcs.append(new_pc)
+
+#         sample['point_clouds'] = new_pcs
+#         return sample
 
 class DropPointsAtSegmentedJoints():
     def __init__(self, max_num2drop=3):
@@ -193,21 +285,39 @@ class Pad():
         return sample
     
 class UniformSample():
-    def __init__(self, clip_len):
+    def __init__(self, clip_len, pad_type='both'):
         self.clip_len = clip_len
-        assert clip_len % 2 == 1, 'num_frames must be odd'
-        self.offset = (clip_len - 1) // 2
+        if pad_type not in ['both', 'start', 'end']:
+            raise ValueError('pad_type must be "both" or "start" or "end"')
+        if pad_type == 'both':
+            assert clip_len % 2 == 1, 'num_frames must be odd'
+            self.pad = (clip_len - 1) // 2
+        else:
+            self.pad = clip_len - 1
+        self.pad_type = pad_type
+
 
     def __call__(self, sample):
         # while len(sample['point_clouds']) < self.clip_len:
         #     sample['point_clouds'].append(sample['point_clouds'][-1])
         #     sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
-        for i in range(self.offset):
-            sample['point_clouds'].insert(0, sample['point_clouds'][0])
-            sample['point_clouds'].append(sample['point_clouds'][-1])
-            if 'keypoints' in sample:
-                sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
-                sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
+        if self.pad_type == 'both':
+            for _ in range(self.pad):
+                sample['point_clouds'].insert(0, sample['point_clouds'][0])
+                sample['point_clouds'].append(sample['point_clouds'][-1])
+                if 'keypoints' in sample:
+                    sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
+                    sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
+        elif self.pad_type == 'start':
+            for _ in range(self.pad):
+                sample['point_clouds'].insert(0, sample['point_clouds'][0])
+                if 'keypoints' in sample:
+                    sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
+        elif self.pad_type == 'end':
+            for _ in range(self.pad):
+                sample['point_clouds'].append(sample['point_clouds'][-1])
+                if 'keypoints' in sample:
+                    sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
         # start_idx = np.random.randint(0, len(sample['point_clouds']) - self.clip_len + 1)
         start_idx = sample['index']
         sample['point_clouds'] = sample['point_clouds'][start_idx:start_idx+self.clip_len]
@@ -376,7 +486,7 @@ class Flip():
     
 class ToSimpleCOCO():
     def __call__(self, sample):
-        if sample['dataset_name'] == 'mmbody':
+        if sample['dataset_name'] in ['mmbody', 'lidarhuman26m']:
             transfer_func = mmbody2simplecoco
         elif sample['dataset_name'] == 'mri':
             transfer_func = coco2simplecoco
@@ -397,7 +507,7 @@ class ToITOP():
     def __call__(self, sample):
         if sample['dataset_name'] in ['mmfi', 'mmfi_lidar']:
             transfer_func = mmfi2itop
-        elif sample['dataset_name'] == 'mmbody':
+        elif sample['dataset_name'] in ['mmbody', 'lidarhuman26m']:
             transfer_func = mmbody2itop
         elif sample['dataset_name'] in ['itop_side', 'itop_top']:
             transfer_func = lambda x: x

@@ -6,6 +6,10 @@ from glob import glob
 from tqdm import tqdm
 import argparse
 import h5py
+from plyfile import PlyData
+import json
+from smpl import SMPL
+import torch
 
 class Preprocessor():
     def __init__(self, root_dir, out_dir):
@@ -414,6 +418,89 @@ class ITOPPreprocessor(Preprocessor):
         split_list = [d for d in split_list if len(d['point_clouds']) >= 5]
         return split_list
 
+class LiDARHuman26MPreprocessor(Preprocessor):
+    def __init__(self, root_dir, out_dir):
+        super().__init__(root_dir, out_dir)
+        self.pc_dir = os.path.join(self.root_dir, 'labels/3d/segment')
+        self.kps_dir = os.path.join(self.root_dir, 'labels/3d/pose')
+
+    def process(self):
+        with open(os.path.join(self.root_dir, 'train.txt')) as f:
+            train_val_ids = f.read().splitlines()
+        with open(os.path.join(self.root_dir, 'test.txt')) as f:
+            test_ids = f.read().splitlines()
+
+        np.random.shuffle(train_val_ids)
+        train_ids = train_val_ids[:int(len(train_val_ids)*0.8)]
+        val_ids = train_val_ids[int(len(train_val_ids)*0.8):]
+
+        self._process_split(train_ids, 'train')
+        self._process_split(val_ids, 'val')
+        self._process_split(test_ids, 'test')
+
+    def _read_point_cloud(self, filename):
+        """ read XYZ point cloud from filename PLY file """
+        ply_data = PlyData.read(filename)['vertex'].data
+        points = np.array([[y, z, x] for x, y, z in ply_data])
+        return points
+    
+    def _read_json(self, filename):
+        with open(filename) as f:
+            data = json.load(f)
+        pose = np.array(data['pose'], dtype=np.float32)
+        beta = np.array(data['beta'], dtype=np.float32)
+        trans = np.array(data['trans'], dtype=np.float32)
+        return pose, beta, trans
+
+    def _process_split(self, ids, split_name):
+        for id in tqdm(ids):
+            pc_fns = sorted(glob(os.path.join(self.pc_dir, str(id), '*.ply')))
+
+            pcs = []
+            poses = []
+            betas = []
+            transs = []
+            for pc_fn in pc_fns:
+                kp_fn = pc_fn.replace('segment', 'pose').replace('ply', 'json')
+                pc = self._read_point_cloud(pc_fn)
+                pose, beta, trans = self._read_json(kp_fn)
+                pcs.append(pc)
+                poses.append(pose)
+                betas.append(beta)
+                transs.append(trans)
+            poses = np.stack(poses)
+            betas = np.stack(betas)
+            transs = np.stack(transs)
+
+            smpl = SMPL().cuda()
+
+            batch_size = 8192
+            num_batches = len(pcs) // batch_size
+            if len(pcs) % batch_size != 0:
+                num_batches += 1
+            for i in range(num_batches):
+                start = i * batch_size
+                end = min((i + 1) * batch_size, len(pcs))
+                verts = smpl(torch.from_numpy(poses[start:end]).cuda(), torch.from_numpy(betas[start:end]).cuda())
+                kps = smpl.get_full_joints(verts).cpu().numpy()
+                kps += transs[start:end, np.newaxis, :]
+                if i == 0:
+                    all_kps = kps
+                else:
+                    all_kps = np.concatenate([all_kps, kps], axis=0)
+            # all_kps += transs[:, np.newaxis, :]
+
+            self.results['sequences'].append({
+                'point_clouds': pcs,
+                'keypoints': all_kps[..., [1, 2, 0]],
+                'action': -1
+            })
+
+            self._add_to_split(split_name, len(self.results['sequences']) - 1)
+
+    def save(self):
+        super().save('lidarhuman26m')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Preprocess dataset')
@@ -447,6 +534,8 @@ if __name__ == '__main__':
         preprocessor = ITOPPreprocessor(args.root_dir, args.out_dir, 'side')
     elif dataset == 'itop_top':
         preprocessor = ITOPPreprocessor(args.root_dir, args.out_dir, 'top')
+    elif dataset == 'lidarhuman26m':
+        preprocessor = LiDARHuman26MPreprocessor(args.root_dir, args.out_dir)
     else:
         raise ValueError('Invalid dataset name')
     
