@@ -13,6 +13,7 @@ from pytorch_lightning.strategies.ddp import DDPStrategy
 
 from dataset.data_api import LitDataModule
 from model.model_api import LitModel
+from model.model_aux_api import AuxLitModel
 # from model.model_ema_api import MeanTeacherLitModel
 from misc.utils import load_cfg, merge_args_cfg
 
@@ -21,14 +22,21 @@ def main(args):
     # if args.mean_teacher:
     #     model = MeanTeacherLitModel(hparams=args)
     # else:
-    model = LitModel(hparams=args)
+    if args.aux:
+        model = AuxLitModel(hparams=args)
+        monitor = 'val_loss'
+        filename = args.model_name+'-{epoch}-{val_loss:.4f}'
+    else:
+        model = LitModel(hparams=args)
+        monitor = 'val_mpjpe'
+        filename = args.model_name+'-{epoch}-{val_mpjpe:.4f}'
     # model.load_from_checkpoint(args.checkpoint_path)
 
     callbacks = [
         ModelCheckpoint(
-            monitor='val_mpjpe',
+            monitor=monitor,
             dirpath=os.path.join('logs', args.exp_name, args.version),
-            filename=args.model_name+'-{epoch}-{val_mpjpe:.4f}',
+            filename=filename,
             save_top_k=1,
             save_last=True,
             mode='min'),
@@ -113,6 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("--version", type=str, default="0")
     parser.add_argument('--only_load_model', action='store_true')
     parser.add_argument('--mean_teacher', action='store_true')
+    parser.add_argument('--aux', action='store_true')
 
     args = parser.parse_args()
     cfg = load_cfg(args.cfg)

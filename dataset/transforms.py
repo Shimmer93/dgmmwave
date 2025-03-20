@@ -12,6 +12,33 @@ def log(x):
     with open('log.txt', 'a') as f:
         f.write(str(x) + '\n')
 
+class CalculateBoneDirections():
+    def __init__(self):
+        pass
+
+    def __call__(self, sample):
+        if isinstance(sample['keypoints'], list):
+            sample['keypoints'] = np.stack(sample['keypoints'])
+
+        bone_dirs = []
+        for bone in ITOPSkeleton.bones:
+            bone_dir = sample['keypoints'][:, bone[1]] - sample['keypoints'][:, bone[0]]
+            bone_dir /= np.linalg.norm(bone_dir, axis=-1, keepdims=True)
+            bone_dirs.append(bone_dir)
+        sample['bone_dirs'] = np.stack(bone_dirs, axis=1)
+
+        return sample
+
+class CalculateBoneMotions():
+    def __init__(self):
+        pass
+
+    def __call__(self, sample):
+        bone_motions = sample['bone_dirs'][1:] - sample['bone_dirs'][:-1]
+        # bone_motions /= np.linalg.norm(bone_motions, axis=-1, keepdims=True)
+        sample['bone_motions'] = bone_motions
+        return sample
+    
 class AddNoisyPoints():
     def __init__(self, add_std=0.01, num_added=32, zero_centered=True):
         self.add_std = add_std
@@ -522,20 +549,31 @@ class ToITOP():
 
 class ToTensor():
     def __call__(self, sample):
-        if isinstance(sample['point_clouds'], list):
-            sample['point_clouds'] = [torch.from_numpy(pc).float() for pc in sample['point_clouds']]
-        else:
-            sample['point_clouds'] = torch.from_numpy(sample['point_clouds']).float()
+        if 'point_clouds' in sample:
+            if isinstance(sample['point_clouds'], list):
+                sample['point_clouds'] = [torch.from_numpy(pc).float() for pc in sample['point_clouds']]
+            else:
+                sample['point_clouds'] = torch.from_numpy(sample['point_clouds']).float()
         if 'keypoints' in sample:
             sample['keypoints'] = torch.from_numpy(sample['keypoints']).float()
         if 'action' in sample:
             sample['action'] = torch.tensor([sample['action']]).float()
-        sample['index'] = torch.tensor([sample['index']]).float()
-        sample['centroid'] = torch.from_numpy(sample['centroid']).float()
-        sample['radius'] = torch.tensor([sample['radius']]).float()
-        sample['scale'] = torch.tensor([sample['scale']]).float()
-        sample['translate'] = torch.from_numpy(sample['translate']).float()
-        sample['rotation_matrix'] = torch.from_numpy(sample['rotation_matrix']).float()
+        if 'index' in sample:
+            sample['index'] = torch.tensor([sample['index']]).float()
+        if 'centroid' in sample:
+            sample['centroid'] = torch.from_numpy(sample['centroid']).float()
+        if 'radius' in sample:
+            sample['radius'] = torch.tensor([sample['radius']]).float()
+        if 'scale' in sample:
+            sample['scale'] = torch.tensor([sample['scale']]).float()
+        if 'translate' in sample:
+            sample['translate'] = torch.from_numpy(sample['translate']).float()
+        if 'rotation_matrix' in sample:
+            sample['rotation_matrix'] = torch.from_numpy(sample['rotation_matrix']).float()
+        if 'bone_dirs' in sample:
+            sample['bone_dirs'] = torch.from_numpy(sample['bone_dirs']).float()
+        if 'bone_motions' in sample:
+            sample['bone_motions'] = torch.from_numpy(sample['bone_motions']).float()
         return sample
 
 class ReduceKeypointLen():

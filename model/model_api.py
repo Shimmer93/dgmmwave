@@ -1,11 +1,12 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 import pytorch_lightning as pl
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import matplotlib.pyplot as plt
 import os
 import pickle
-from pytorch3d.loss import chamfer_distance
+# from pytorch3d.loss import chamfer_distance
 
 # import wandb
 # import tensorboard
@@ -117,53 +118,63 @@ class LitModel(pl.LightningModule):
             loss = self.loss(y_hat, y)
             losses = {'loss': loss}
         elif self.hparams.model_name in ['P4TransformerDA8', 'P4TransformerDA9']:
-            if self.hparams.mode == 'train':
-                x_ref = batch['ref_point_clouds']
-                y_hat, y_hat_ref, y_hat2, y_hat_ref2, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
-                l_pc = self.loss(y_hat, y)
-                l_pc2 = self.loss(y_hat2, y.clone())
-                # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
-                # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
-                loss = l_pc + l_pc2 + self.hparams.w_rec * (l_rec + l_rec_ref) + self.hparams.w_mem * l_mem # + w_con * l_con
-                losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
-            else:
-                raise ValueError('mode must be train!')
+            x_ref = batch['ref_point_clouds']
+            y_hat, y_hat_ref, y_hat2, y_hat_ref2, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
+            l_pc = self.loss(y_hat, y)
+            l_pc2 = self.loss(y_hat2, y.clone())
+            # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
+            # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
+            loss = l_pc + l_pc2 + self.hparams.w_rec * (l_rec + l_rec_ref) + self.hparams.w_mem * l_mem # + w_con * l_con
+            losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
         elif self.hparams.model_name in ['P4TransformerDA10']:
-            if self.hparams.mode == 'train':
-                x_ref = batch['ref_point_clouds']
-                y_hat, y_hat2, l_prec, l_prec_ref, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
-                l_pc = self.loss(y_hat, y)
-                l_pc2 = self.loss(y_hat2, y.clone())
-                # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
-                # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
-                loss = l_pc + l_pc2 + self.hparams.w_rec * (l_rec + l_rec_ref) + self.hparams.w_mem * l_mem # + w_con * l_con
-                losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_prec': l_prec, 'l_prec_ref': l_prec_ref, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
+            x_ref = batch['ref_point_clouds']
+            y_hat, y_hat2, l_prec, l_prec_ref, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
+            l_pc = self.loss(y_hat, y)
+            l_pc2 = self.loss(y_hat2, y.clone())
+            # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
+            # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
+            loss = l_pc + l_pc2 + self.hparams.w_rec * (l_rec + l_rec_ref) + self.hparams.w_mem * l_mem # + w_con * l_con
+            losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_prec': l_prec, 'l_prec_ref': l_prec_ref, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
         elif self.hparams.model_name in ['P4TransformerDA11']:
-            if self.hparams.mode == 'train':
-                x_ref = batch['ref_point_clouds']
-                y_hat, y_hat2, l_conf, l_rec, l_rec_ref, l_mem, l_prec, l_prec_ref = self.model((x, x_ref), mode='train')
-                l_pc = self.loss(y_hat, y)
-                l_pc2 = self.loss(y_hat2, y.clone())
-                # l_pc2 = self.loss(y_hat2 - y_hat2.mean(dim=2, keepdim=True), y.clone() - y.clone().mean(dim=2, keepdim=True))
-                # B, T, L, C = x_ref.shape
-                # l_dist = torch.cdist(y_ref_hat[:, 0], x_ref[:, 2]).min(dim=-1)[0].mean()
-                # l_dist = 0
-                # for i in range(B):
-                #     for j in range(T):
-                #         x_new_ij = x_new[i, j]
-                #         x_ij = x[i, j][..., :C]
-                #         conf_ij = x[i, j][..., -1]
-                #         l_dist += chamfer_distance(x_new_ij.reshape(1, -1, C).to(x.dtype), x_ij[conf_ij > 0].reshape(1, -1, C).detach())[0]
-                # l_dist /= B * T
-                # l_dist = chamfer_distance(y_ref_hat.reshape(B, -1, 3).to(x.dtype), x_ref[:, 2, :, :3].reshape(-1, L, C).detach())[0]# + \
-                #             chamfer_distance(x_new_ref_hat.reshape(-1, L, C).to(x.dtype), x_ref[..., :C].reshape(-1, L, C).detach())[0]
-                # l_dist_ref, _ = chamfer_distance(x_new_ref.reshape(-1, L, C).to(x.dtype), x_ref[..., :C].reshape(-1, L, C).detach())
-                # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
-                # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
-                loss = l_pc + l_pc2 + self.hparams.w_conf * l_conf + self.hparams.w_rec * (l_rec_ref) + \
-                    self.hparams.w_prec * (l_prec + l_prec_ref) # + self.hparams.w_dist * l_dist # + self.hparams.w_prec * l_prec  # + w_con * l_con self.hparams.w_mem * l_mem + 
-                losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_conf': l_conf, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 
-                          'l_prec': l_prec, 'l_prec_ref': l_prec_ref}
+            x_ref = batch['ref_point_clouds']
+            y_hat, y_hat2, l_conf, l_rec, l_rec_ref, l_mem, l_prec, l_prec_ref = self.model((x, x_ref), mode='train')
+            l_pc = self.loss(y_hat, y)
+            l_pc2 = self.loss(y_hat2, y.clone())
+            loss = l_pc + l_pc2 + self.hparams.w_conf * l_conf + self.hparams.w_rec * (l_rec_ref) + \
+                self.hparams.w_prec * (l_prec + l_prec_ref) # + self.hparams.w_dist * l_dist # + self.hparams.w_prec * l_prec  # + w_con * l_con self.hparams.w_mem * l_mem + 
+            losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_conf': l_conf, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 
+                        'l_prec': l_prec, 'l_prec_ref': l_prec_ref}
+        elif self.hparams.model_name in ['LMA_P4T']:
+            x_ref = batch['ref_point_clouds']
+            # vis_lidar, vis_transferred, \
+            y_hat, y_transferred, y_mmwave0, y_mmwave1, \
+            l_rec_lidar, l_rec_mmwave = self.model((x, x_ref), mode='train')
+            l_pc = self.loss(y_hat, y) + self.loss(y_transferred, y)
+
+            l_tcon = F.mse_loss(y_mmwave0, y_mmwave1, reduction='none').mean(dim=-1)
+            l_tcon = torch.min(l_tcon, dim=-1)[0]
+            l_tcon[l_tcon < 0.01] = 0
+            l_tcon = l_tcon.mean()
+
+            # vis_gt = torch.zeros_like(vis_lidar, dtype=torch.float32)
+            # for i in range(len(vis_gt)):
+            #     for j in range(len(vis_gt[i])):
+            #         vis_gt[i][j][0] = torch.any(x[i, -1, :, -1] == j+1)
+            # l_vis = F.binary_cross_entropy_with_logits(vis_lidar, vis_gt) + \
+            #         F.binary_cross_entropy_with_logits(vis_transferred, vis_gt)
+            
+            loss = l_pc + self.hparams.w_rec * (l_rec_lidar + l_rec_mmwave)# + self.hparams.w_tcon * l_tcon
+
+            losses = {'loss': loss, 'l_pc': l_pc, #'l_tcon': l_tcon, 
+                      'l_rec_lidar': l_rec_lidar, 'l_rec_mmwave': l_rec_mmwave}
+            
+        elif self.hparams.model_name in ['LMA2_P4T']:
+            x_ref = batch['ref_point_clouds']
+            y_hat, l_rec = self.model((x, x_ref), mode='train')
+            l_pc = self.loss(y_hat, y)
+            loss = l_pc + self.hparams.w_rec * l_rec
+            losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec}
+            
         elif self.hparams.model_name == 'PoseTransformer':
             #TODO: Implement the loss function of posetran
             # sformer
@@ -189,10 +200,7 @@ class LitModel(pl.LightningModule):
     def _evaluate(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
-        if self.hparams.model_name in ['P4TransformerDA11']:
-            y_hat = self.model(x, mode='inference')
-        else:
-            y_hat = self.model(x)
+        y_hat = self.model(x)
         return x, y, y_hat
 
     def training_step(self, batch, batch_idx):

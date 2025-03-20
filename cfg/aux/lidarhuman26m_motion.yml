@@ -1,0 +1,86 @@
+strategy: ddp
+benchmark: True
+pretrained: False
+sync_batchnorm: False
+clip_grad: null
+precision: 16
+epochs: &epochs 100
+# --------------------------------------
+# Dataset parameters
+# --------------------------------------
+train_dataset:
+  name: SklOnlyDataset
+  params:
+    data_path: &data_path data/lidarhuman26m.pkl
+    split: [train, val]
+val_dataset:
+  name: SklOnlyDataset
+  params:
+    data_path: *data_path
+    split: test
+test_dataset:
+  name: SklOnlyDataset
+  params:
+    data_path: *data_path
+    split: test
+# --------------------------------------
+# Optimizer parameters
+# --------------------------------------
+optim_name: AdamW
+optim_params:
+  lr: 0.00001
+  weight_decay: 0.00001
+# --------------------------------------
+# Learning rate scheduler parameters
+# --------------------------------------
+sched_name: LinearWarmupCosineAnnealingLR
+sched_params:
+  warmup_epochs: 20
+  max_epochs: *epochs
+  warmup_start_lr: 0.000001
+  eta_min: 0.000001
+# --------------------------------------
+# Model parameters
+# --------------------------------------
+model_name: PlausibilityRegressor
+model_variant: motion
+model_params:
+  num_bones: 14
+  depth_enc: 2
+  depth_dec: 5
+  dim: 6
+# --------------------------------------
+# Loss parameters
+# --------------------------------------
+loss_name: MSELoss
+loss_params: null
+# --------------------------------------
+# Augmentation parameters
+# --------------------------------------
+train_pipeline:
+  - name: UniformSample
+    params: 
+      clip_len: 2
+      pad_type: end
+  - name: ToITOP
+    params: null
+  - name: CalculateBoneDirections
+    params: null
+  - name: CalculateBoneMotions
+    params: null
+  - name: ToTensor
+    params: null
+val_pipeline: &val_pipeline
+  - name: UniformSample
+    params: 
+      clip_len: 2
+      pad_type: end
+  - name: ToITOP
+    params: null
+  - name: CalculateBoneDirections
+    params: null
+  - name: CalculateBoneMotions
+    params: null
+  - name: ToTensor
+    params: null
+test_pipeline: *val_pipeline
