@@ -4,17 +4,15 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: &epochs 150
+epochs: &epochs 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
 train_dataset:
-  name: ReferenceDataset
+  name: TemporalDataset
   params:
     data_path: &data_path data/lidarhuman26m.pkl
     split: [train, val]
-    ref_data_path: data/mmfi.pkl
-    ref_split: test_rdn_p3
 val_dataset:
   name: TemporalDataset
   params:
@@ -30,7 +28,7 @@ test_dataset:
 # --------------------------------------
 optim_name: AdamW
 optim_params:
-  lr: 0.0001
+  lr: 0.00001
   weight_decay: 0.00001
 # --------------------------------------
 # Learning rate scheduler parameters
@@ -39,13 +37,13 @@ sched_name: LinearWarmupCosineAnnealingLR
 sched_params:
   warmup_epochs: 20
   max_epochs: *epochs
-  warmup_start_lr: 0.00001
-  eta_min: 0.00001
+  warmup_start_lr: 0.000001
+  eta_min: 0.000001
 # --------------------------------------
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: LMA2_P4T
+model_name: P4Transformer
 model_params:
   radius: 0.7
   nsamples: 32
@@ -58,15 +56,8 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
-  dim_proposal: 128
-  heads_proposal: 4
-  dim_head_proposal: 32
-  num_joints: 15 
-  mem_size_per_joint: 32
-  num_proposal: 16
-  num_points: 256
-  depth_joint: 3
-use_aux: False
+  output_dim: 45
+  features: 3
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -75,8 +66,6 @@ loss_params: null
 # weight for auxiliary losses
 w_rec: 0.001
 w_mem: 0.001
-w_tcon: 0.001
-w_vis: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -97,25 +86,24 @@ train_pipeline:
     params: 
       outlier_type: 'box'
       radius: 1.5
-    prob: 0.5
-  # - name: AddPointsAroundJoint
-  #   params:
-  #     add_std: 0.2
-  #     max_num2add: 3
-  #     num_added: 8
-  #   prob: 0.5
-  - name: GenerateSegmentationGroundTruth
-    params: 
-      padding: 0.25
-  - name: ConvertToMMWavePointCloud
-    params:
-      dist_threshold: 0.01
-      default_num_points: 8
   - name: AddNoisyPoints
     params:
       add_std: 0.2
-      num_added: 16
+      num_added: 8
       zero_centered: false
+    prob: 0.5
+  - name: AddPointsAroundJoint
+    params:
+      add_std: 0.2
+      max_num2add: 3
+      num_added: 32
+    prob: 0.5
+  - name: GenerateSegmentationGroundTruth
+    params: null
+  - name: DropPointsAtSegmentedJoints
+    params:
+      max_num2drop: 13
+    prob: 0.9
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -179,5 +167,33 @@ val_pipeline: &val_pipeline
       max_len: 256
   - name: ToTensor
     params: null
-test_pipeline: *val_pipeline
-ref_pipeline: *val_pipeline
+test_pipeline:
+  - name: UniformSample
+    params:
+      pad_type: 'start'
+      clip_len: 5
+  - name: GetCentroid
+    params: 
+      centroid_type: 'median'
+  - name: ToITOP
+    params: null
+  - name: Normalize
+    params:
+      feat_scale: null
+  - name: RemoveOutliers
+    params: 
+      outlier_type: 'box'
+      radius: 1.5
+  - name: GenerateSegmentationGroundTruth
+    params: 
+      padding: 0.25
+  - name: ReduceKeypointLen
+    params:
+      only_one: true
+      keep_type: 'end'
+      frame_to_reduce: 0
+  - name: Pad
+    params:
+      max_len: 256
+  - name: ToTensor
+    params: null

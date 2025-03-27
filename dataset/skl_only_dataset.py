@@ -33,6 +33,8 @@ class SklOnlyDataset(TemporalDataset):
             keys.append('bone_dirs')
         if 'bone_motions' in batch[0].keys():
             keys.append('bone_motions')
+        if 'joint_motions' in batch[0].keys():
+            keys.append('joint_motions')
         for key in keys:
             batch_data[key] = torch.stack([sample[key] for sample in batch], dim=0)
 

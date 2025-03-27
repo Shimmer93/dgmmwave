@@ -1,6 +1,7 @@
 import yaml
 from argparse import Namespace
 import sys
+from collections import OrderedDict
 
 def load_cfg(cfg):
     hyp = None
@@ -22,3 +23,12 @@ def torch2numpy(tensor):
 
 def import_with_str(module, name):
     return getattr(sys.modules[module], name)
+
+def delete_prefix_from_state_dict(state_dict, prefix):
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        if k.startswith(prefix):
+            new_state_dict[k[len(prefix):]] = v
+        else:
+            new_state_dict[k] = v
+    return new_state_dict

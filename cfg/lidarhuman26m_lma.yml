@@ -75,6 +75,7 @@ w_rec: 0.001
 w_mem: 0.001
 w_tcon: 0.001
 w_vis: 0.001
+w_conf: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -177,5 +178,34 @@ val_pipeline: &val_pipeline
       max_len: 256
   - name: ToTensor
     params: null
-test_pipeline: *val_pipeline
-ref_pipeline: *val_pipeline
+test_pipeline: &test_pipeline
+  - name: UniformSample
+    params:
+      pad_type: 'start'
+      clip_len: 6
+  - name: GetCentroid
+    params: 
+      centroid_type: 'median'
+  - name: ToITOP
+    params: null
+  - name: Normalize
+    params:
+      feat_scale: null
+  - name: RemoveOutliers
+    params: 
+      outlier_type: 'box'
+      radius: 1.5
+  - name: GenerateSegmentationGroundTruth
+    params: 
+      padding: 0.25
+  - name: ReduceKeypointLen
+    params:
+      only_one: true
+      keep_type: 'end'
+      frame_to_reduce: 0
+  - name: Pad
+    params:
+      max_len: 256
+  - name: ToTensor
+    params: null
+ref_pipeline: *test_pipeline

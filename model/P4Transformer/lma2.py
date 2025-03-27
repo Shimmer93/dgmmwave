@@ -12,6 +12,43 @@ sys.path.append(os.path.join(ROOT_DIR, 'modules'))
 from .point_4d_convolution import *
 from .transformer import *
 
+class PCAdapter(nn.Module):
+    def __init__(self, dim, depth, heads, dim_head):
+        super().__init__()
+
+        self.enc = nn.Sequential(
+            nn.Linear(3, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+            nn.Linear(dim, dim)
+        )
+
+        self.mixer = Transformer(dim, depth, heads, dim_head, dim * 2, dropout=0.1)
+
+        self.dec_point = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+            nn.Linear(dim, 3)
+        )
+
+        self.dec_conf = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+            nn.Linear(dim, 3)
+        )
+
+    def forward(self, x):
+        # B, N, C = x.shape
+        x_new = self.enc(x)
+        x_new = self.mixer(x_new)
+        x_new = self.dec_point(x)
+        conf = self.dec_conf(x)
+        conf_ = F.sigmoid(conf).detach()
+        x_new = x_new * (1 - conf_) + x * conf_
+        return x_new, conf
+
 class AttentionMemoryBank(nn.Module):
     def __init__(self, dim, mem_size):
         super().__init__()
@@ -268,9 +305,11 @@ class LMA2_P4T(nn.Module):
                                      emb_relu, dim)
         
         self.mixer = Transformer(dim, depth, heads, dim_head, mlp_dim)
-        self.mem = JointAttentionMemoryBank(dim, mem_size_per_joint, num_joints)
+        self.mem_lidar = JointAttentionMemoryBank(dim, mem_size_per_joint, num_joints)
+        self.mem_mmwave = JointAttentionMemoryBank(dim, mem_size_per_joint, num_joints)
         # self.joint_mixer = Transformer(dim, depth_joint, heads, dim_head, mlp_dim)
-        self.dec = JointMLPDecoder(dim, mlp_dim, num_joints)
+        self.dec_lidar = JointMLPDecoder(dim, mlp_dim, num_joints)
+        self.dec_mmwave = JointMLPDecoder(dim, mlp_dim, num_joints)
 
         self.num_joints = num_joints
 
@@ -290,37 +329,50 @@ class LMA2_P4T(nn.Module):
         emb_lidar = self.enc(x_lidar)
         emb_mmwave = self.enc(x_mmwave)
 
-        feat_lidar = self.mixer(emb_lidar) # B, Ln, D
+        feat_lidar_ = self.mixer(emb_lidar) # B, Ln, D
         feat_mmwave = self.mixer(emb_mmwave)
 
-        # self.mem.requires_grad_(True)
-        feat_mem_mmwave = self.mem(feat_mmwave)
-        l_rec = F.mse_loss(feat_mem_mmwave, feat_mmwave)
+        self.mem_mmwave.requires_grad_(True)
+        # feat_mem_lidar = self.mem_lidar(feat_lidar)
+        feat_mem_mmwave = self.mem_mmwave(feat_mmwave)
+        # l_rec_lidar = F.mse_loss(feat_mem_lidar, feat_lidar)
+        l_rec_mmwave = F.mse_loss(feat_mem_mmwave, feat_mmwave)
         
         # self.mem.requires_grad_(False)
-        feat_transferred = feat_lidar.unsqueeze(0).repeat(self.num_joints, 1, 1, 1)
+
+        feat_lidar = feat_lidar_.unsqueeze(0).repeat(self.num_joints, 1, 1, 1)
+        feat_mem_lidar = []
+        for i in range(self.num_joints):
+            feat_mem_lidar.append(self.mem_lidar(feat_lidar[i], idx=i))
+        feat_mem_lidar = torch.stack(feat_mem_lidar, dim=1)
+        feat_mem_lidar = torch.max(input=feat_mem_lidar, dim=2, keepdim=False, out=None)[0]
+
+        self.mem_mmwave.requires_grad_(False)
+        feat_transferred = feat_lidar_.clone().unsqueeze(0).repeat(self.num_joints, 1, 1, 1)
         feat_mem_transferred = []
         for i in range(self.num_joints):
-            feat_mem_transferred.append(self.mem(feat_transferred[i], idx=i))
+            feat_mem_transferred.append(self.mem_mmwave(feat_transferred[i], idx=i))
         feat_mem_transferred = torch.stack(feat_mem_transferred, dim=1) # B, J, Ln, D
         feat_mem_transferred = torch.max(input=feat_mem_transferred, dim=2, keepdim=False, out=None)[0]
         
         # feat_mem_transferred = self.joint_mixer(feat_mem_transferred)
-        y = self.dec(feat_mem_transferred)
+        
+        y_lidar = self.dec_lidar(feat_mem_lidar)
+        y_transferred = self.dec_mmwave(feat_mem_transferred)
 
-        return y, l_rec
+        return y_lidar, y_transferred, l_rec_mmwave
     
     def forward_inference(self, x):
         emb = self.enc(x)
         feat = self.mixer(emb)
-        feat_mem = self.mem(feat)
+        # feat_mem = self.mem_mmwave(feat)
         feat_mem_new = []
         for i in range(self.num_joints):
-            feat_mem_new.append(self.mem(feat_mem, idx=i))
+            feat_mem_new.append(self.mem_mmwave(feat, idx=i))
         feat_mem_new = torch.stack(feat_mem_new, dim=1)
         feat_mem_new = torch.max(input=feat_mem_new, dim=2, keepdim=False, out=None)[0]
         # feat_mem_new = self.joint_mixer(feat_mem_new)
-        y = self.dec(feat_mem_new)
+        y = self.dec_mmwave(feat_mem_new)
         return y
 
 

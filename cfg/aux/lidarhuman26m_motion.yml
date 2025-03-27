@@ -45,7 +45,7 @@ sched_params:
 model_name: PlausibilityRegressor
 model_variant: motion
 model_params:
-  num_bones: 14
+  num_bones: 15
   depth_enc: 2
   depth_dec: 5
   dim: 6
@@ -64,9 +64,7 @@ train_pipeline:
       pad_type: end
   - name: ToITOP
     params: null
-  - name: CalculateBoneDirections
-    params: null
-  - name: CalculateBoneMotions
+  - name: CalculateJointMotions
     params: null
   - name: ToTensor
     params: null
@@ -77,9 +75,7 @@ val_pipeline: &val_pipeline
       pad_type: end
   - name: ToITOP
     params: null
-  - name: CalculateBoneDirections
-    params: null
-  - name: CalculateBoneMotions
+  - name: CalculateJointMotions
     params: null
   - name: ToTensor
     params: null

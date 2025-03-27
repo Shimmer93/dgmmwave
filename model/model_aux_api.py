@@ -53,9 +53,9 @@ class AuxLitModel(pl.LightningModule):
             self.results = []
 
     def _add_random_direction_noise_spherical(self, dx, dy, dz, angle_noise_level=0.1):
-        # dx: B
-        # dy: B
-        # dz: B
+        # dx: B N
+        # dy: B N
+        # dz: B N
         # angle_noise_level: scalar
 
         # convert to spherical coordinates
@@ -79,9 +79,9 @@ class AuxLitModel(pl.LightningModule):
         return dx, dy, dz, magnitude
 
     def _add_random_motion_noise(self, dx, dy, dz, noise_level=0.1):
-        # dx: B
-        # dy: B
-        # dz: B
+        # dx: B N
+        # dy: B N
+        # dz: B N
         # noise_level: scalar
 
         noise_x = torch.randn_like(dx) * noise_level
@@ -102,10 +102,11 @@ class AuxLitModel(pl.LightningModule):
                 x_neg[..., 0], x_neg[..., 1], x_neg[..., 2], magnitude = \
                     self._add_random_direction_noise_spherical(x_neg[..., 0], x_neg[..., 1], x_neg[..., 2], angle_noise_level = 0.5)
             else:
-                x_pos = batch['bone_motions'].squeeze()
+                x_pos = batch['joint_motions'].squeeze()
                 x_neg = x_pos.clone()
                 x_neg[..., 0], x_neg[..., 1], x_neg[..., 2], magnitude = \
-                    self._add_random_motion_noise(x_neg[..., 0], x_neg[..., 1], x_neg[..., 2], noise_level = 0.5)
+                    self._add_random_direction_noise_spherical(x_neg[..., 0], x_neg[..., 1], x_neg[..., 2], angle_noise_level = 0.5)
+                # print(magnitude)
             x = torch.cat([x_pos, x_neg], dim=0)
             y = torch.cat([torch.ones_like(magnitude) * magnitude, torch.zeros_like(magnitude)], dim=0).to(x.device)
             y_hat = self.model(x)

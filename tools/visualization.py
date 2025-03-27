@@ -77,7 +77,7 @@ def process_frame(index, axes, data_dict, edges, bounds):
         ax = axes[i]
 
         ax.clear()
-        ax.grid(False)
+        # ax.grid(False)
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_zticks([])

@@ -45,7 +45,7 @@ sched_params:
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: LMA2_P4T
+model_name: LMA_P4T
 model_params:
   radius: 0.7
   nsamples: 32
@@ -58,15 +58,26 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
+  mem_size: 512
   dim_proposal: 128
   heads_proposal: 4
   dim_head_proposal: 32
   num_joints: 15 
-  mem_size_per_joint: 32
   num_proposal: 16
   num_points: 256
-  depth_joint: 3
-use_aux: False
+use_aux: True
+reg_dir_params:
+  num_bones: 14
+  depth_enc: 2
+  depth_dec: 5
+  dim: 6
+reg_motion_params:
+  num_bones: 14
+  depth_enc: 2
+  depth_dec: 5
+  dim: 6
+reg_dir_path: /home/zpengac/pose/dgmmwave/logs/aux_dir/20250320_015522/PlausibilityRegressor-epoch=99-val_loss=0.1391.ckpt
+reg_motion_path: /home/zpengac/pose/dgmmwave/logs/aux_motion/20250320_210034/PlausibilityRegressor-epoch=99-val_loss=0.0671.ckpt
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -77,6 +88,8 @@ w_rec: 0.001
 w_mem: 0.001
 w_tcon: 0.001
 w_vis: 0.001
+w_pl_dir: 0.001
+w_pl_motion: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -84,7 +97,7 @@ train_pipeline:
   - name: UniformSample
     params: 
       pad_type: 'start'
-      clip_len: 5
+      clip_len: 6
   - name: GetCentroid
     params: 
       centroid_type: 'median'
@@ -97,6 +110,11 @@ train_pipeline:
     params: 
       outlier_type: 'box'
       radius: 1.5
+  - name: AddNoisyPoints
+    params:
+      add_std: 0.2
+      num_added: 8
+      zero_centered: false
     prob: 0.5
   # - name: AddPointsAroundJoint
   #   params:
@@ -110,12 +128,7 @@ train_pipeline:
   - name: ConvertToMMWavePointCloud
     params:
       dist_threshold: 0.01
-      default_num_points: 8
-  - name: AddNoisyPoints
-    params:
-      add_std: 0.2
-      num_added: 16
-      zero_centered: false
+      default_num_points: 4
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -149,7 +162,7 @@ val_pipeline: &val_pipeline
   - name: UniformSample
     params:
       pad_type: 'start'
-      clip_len: 5
+      clip_len: 6
   - name: GetCentroid
     params: 
       centroid_type: 'median'

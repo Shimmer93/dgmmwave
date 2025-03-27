@@ -13,8 +13,8 @@ def log(x):
         f.write(str(x) + '\n')
 
 class CalculateBoneDirections():
-    def __init__(self):
-        pass
+    def __init__(self, norm=True):
+        self.norm = norm
 
     def __call__(self, sample):
         if isinstance(sample['keypoints'], list):
@@ -23,7 +23,8 @@ class CalculateBoneDirections():
         bone_dirs = []
         for bone in ITOPSkeleton.bones:
             bone_dir = sample['keypoints'][:, bone[1]] - sample['keypoints'][:, bone[0]]
-            bone_dir /= np.linalg.norm(bone_dir, axis=-1, keepdims=True)
+            if self.norm:
+                bone_dir /= np.linalg.norm(bone_dir, axis=-1, keepdims=True)
             bone_dirs.append(bone_dir)
         sample['bone_dirs'] = np.stack(bone_dirs, axis=1)
 
@@ -37,6 +38,21 @@ class CalculateBoneMotions():
         bone_motions = sample['bone_dirs'][1:] - sample['bone_dirs'][:-1]
         # bone_motions /= np.linalg.norm(bone_motions, axis=-1, keepdims=True)
         sample['bone_motions'] = bone_motions
+        return sample
+    
+class CalculateJointMotions():
+    def __init__(self, norm=True):
+        self.norm = norm
+
+    def __call__(self, sample):
+        if isinstance(sample['keypoints'], list):
+            sample['keypoints'] = np.stack(sample['keypoints'])
+
+        joint_motions = sample['keypoints'][1:] - sample['keypoints'][:-1]
+        if self.norm:
+            joint_motions /= (np.linalg.norm(joint_motions, axis=-1, keepdims=True) + 1e-6)
+        sample['joint_motions'] = joint_motions
+
         return sample
     
 class AddNoisyPoints():
@@ -96,9 +112,11 @@ class GenerateSegmentationGroundTruth():
         return mask
 
 class ConvertToMMWavePointCloud():
-    def __init__(self, dist_threshold=0.1, default_num_points=32):
+    def __init__(self, dist_threshold=0.1, add_std=0.1, default_num_points=32, num_noisy_points=32):
         self.dist_threshold = dist_threshold
+        self.add_std = add_std
         self.default_num_points = default_num_points
+        self.num_noisy_points = num_noisy_points
 
     def __call__(self, sample):
         if isinstance(sample['keypoints'], list):
@@ -120,6 +138,10 @@ class ConvertToMMWavePointCloud():
                 if mask[i, j]:
                     new_pc.append(pc0_j)
                     num_points += len(pc0_j)
+                    # add_points = sample['keypoints'][i][j][np.newaxis, :].repeat(self.num_noisy_points, axis=0) + \
+                    #                 np.random.normal(0, self.add_std, (self.num_noisy_points, sample['point_clouds'][-1].shape[-1]))
+                    # new_pc.append(add_points)
+                    # num_points += self.num_noisy_points
 
             if num_points == 0:
                 random_idxs = np.random.choice(pc0.shape[0], self.default_num_points)
@@ -574,6 +596,8 @@ class ToTensor():
             sample['bone_dirs'] = torch.from_numpy(sample['bone_dirs']).float()
         if 'bone_motions' in sample:
             sample['bone_motions'] = torch.from_numpy(sample['bone_motions']).float()
+        if 'joint_motions' in sample:
+            sample['joint_motions'] = torch.from_numpy(sample['joint_motions']).float()
         return sample
 
 class ReduceKeypointLen():

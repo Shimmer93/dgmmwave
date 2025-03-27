@@ -13,7 +13,8 @@ import pickle
 
 from model.metrics import calulate_error
 from loss.mpjpe import mpjpe as mpjpe_mmwave
-from misc.utils import torch2numpy, import_with_str
+from misc.utils import torch2numpy, import_with_str, delete_prefix_from_state_dict
+from misc.skeleton import ITOPSkeleton, JOINT_COLOR_MAP
 
 def create_model(model_name, model_params):
     if model_params is None:
@@ -58,6 +59,14 @@ class LitModel(pl.LightningModule):
         if hparams.save_when_test:
             self.results = []
 
+        if hasattr(hparams, 'use_aux') and hparams.use_aux:
+            self.reg_dir = create_model('PlausibilityRegressor', hparams.reg_dir_params)
+            self.reg_motion = create_model('PlausibilityRegressor', hparams.reg_motion_params)
+            self.reg_dir.load_state_dict(delete_prefix_from_state_dict(torch.load(hparams.reg_dir_path, map_location=self.device)['state_dict'], 'model.'))
+            self.reg_motion.load_state_dict(delete_prefix_from_state_dict(torch.load(hparams.reg_motion_path, map_location=self.device)['state_dict'], 'model.'))
+            self.reg_dir.requires_grad_(False)
+            self.reg_motion.requires_grad_(False)
+
     def _recover_point_cloud(self, x, center, radius):
         x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
         x = torch2numpy(x)
@@ -74,35 +83,74 @@ class LitModel(pl.LightningModule):
         y_hat = self._recover_skeleton(y_hat, center, radius)
         return x, y, y_hat
 
+    def _get_bounds(self, data):
+        all_ps = data[..., :3].reshape(-1, 3)
+        min_x, max_x = np.min(all_ps[:, 0]), np.max(all_ps[:, 0])
+        min_y, max_y = np.min(all_ps[:, 1]), np.max(all_ps[:, 1])
+        min_z, max_z = np.min(all_ps[:, 2]), np.max(all_ps[:, 2])
+        return min_x, max_x, min_y, max_y, min_z, max_z
+    
+    def _set_3d_ax_limits(self, ax, bounds):
+        min_x, max_x, min_y, max_y, min_z, max_z = bounds
+        range_x = max_x - min_x
+        range_y = max_y - min_y
+        range_z = max_z - min_z
+
+        ax.set_box_aspect([range_x, range_y, range_z])
+        ax.set_xlim(min_x - range_x * 0.1, max_x + range_x * 0.1)
+        ax.set_zlim(min_y - range_y * 0.1, max_y + range_y * 0.1)
+        ax.set_ylim(min_z - range_z * 0.1, max_z + range_z * 0.1)
+
     def _vis_pred_gt_keypoints(self, x, y, y_hat):
         fig = plt.figure()
-        ax_pred = fig.add_subplot(231)
-        ax_gt = fig.add_subplot(232)
-        ax_2d = fig.add_subplot(233)
-        ax_3d = fig.add_subplot(234, projection='3d')
-        ax_pc = fig.add_subplot(235)
+        ax_pred_xy = fig.add_subplot(331)
+        ax_pred_xz = fig.add_subplot(332)
+        ax_pred_yz = fig.add_subplot(333)
+        ax_gt_xy = fig.add_subplot(334)
+        ax_gt_xz = fig.add_subplot(335)
+        ax_gt_yz = fig.add_subplot(336)
+        ax_pred_3d = fig.add_subplot(337, projection='3d')
+        ax_gt_3d = fig.add_subplot(338, projection='3d')
+        ax_pc = fig.add_subplot(339, projection='3d')
 
-        ax_pred.set_aspect('equal')
-        ax_gt.set_aspect('equal')
-        ax_2d.set_aspect('equal')
-        ax_3d.set_aspect('equal')
-        ax_pc.set_aspect('equal')
+        ax_pred_xy.set_aspect('equal')
+        ax_pred_xz.set_aspect('equal')
+        ax_pred_yz.set_aspect('equal')
+        ax_gt_xy.set_aspect('equal')
+        ax_gt_xz.set_aspect('equal')
+        ax_gt_yz.set_aspect('equal')
+        
+        y_hat_bounds = self._get_bounds(y_hat[0, 0])
+        y_bounds = self._get_bounds(y[0, 0])
+        x_bounds = self._get_bounds(x[0, 0])
 
-        ax_pred.set_title('Predicted')
-        ax_gt.set_title('Ground Truth')
-        ax_2d.set_title('2D')
-        ax_3d.set_title('3D')
+        self._set_3d_ax_limits(ax_pred_3d, y_hat_bounds)
+        self._set_3d_ax_limits(ax_gt_3d, y_bounds)
+        self._set_3d_ax_limits(ax_pc, x_bounds)
+
+        ax_pred_xy.set_title('Predicted XY')
+        ax_pred_xz.set_title('Predicted XZ')
+        ax_pred_yz.set_title('Predicted YZ')
+        ax_gt_xy.set_title('GT XY')
+        ax_gt_xz.set_title('GT XZ')
+        ax_gt_yz.set_title('GT YZ')
+        ax_pred_3d.set_title('Predicted 3D')
+        ax_gt_3d.set_title('GT 3D')
         ax_pc.set_title('Point Cloud')
 
-        for p_hat, p in zip(y_hat[0, 0], y[0, 0]):
-            random_color = np.random.rand(3).tolist()
-            ax_pred.plot(p_hat[0], p_hat[1], color=random_color, marker='o')
-            ax_gt.plot(p[0], p[1], color=random_color, marker='o')
-        ax_2d.plot(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], 'bo')
-        ax_2d.plot(y[0, 0, :, 0], y[0, 0, :, 1], 'ro')
-        ax_3d.scatter(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], y_hat[0, 0, :, 2], 'b')
-        ax_3d.scatter(y[0, 0, :, 0], y[0, 0, :, 1], y[0, 0, :, 2], 'r')
-        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 1], x[0, 0, :, 2], 'g')
+        for i, (p_hat, p) in enumerate(zip(y_hat[0, 0], y[0, 0])):
+            color = JOINT_COLOR_MAP[i]
+            ax_pred_xy.plot(p_hat[0], p_hat[1], color=color, marker='o')
+            ax_pred_xz.plot(p_hat[0], p_hat[2], color=color, marker='o')
+            ax_pred_yz.plot(p_hat[1], p_hat[2], color=color, marker='o')
+            ax_gt_xy.plot(p[0], p[1], color=color, marker='o')
+            ax_gt_xz.plot(p[0], p[2], color=color, marker='o')
+            ax_gt_yz.plot(p[1], p[2], color=color, marker='o')
+            ax_pred_3d.scatter(p_hat[0], p_hat[2], p_hat[1], color=color, marker='o')
+            ax_gt_3d.scatter(p[0], p[2], p[1], color=color, marker='o')
+        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 2], x[0, 0, :, 1], 'g', marker='o')
+
+        fig.tight_layout()
 
         # wandb.log({'keypoints': wandb.Image(fig)})
         tensorboard = self.logger.experiment
@@ -147,33 +195,67 @@ class LitModel(pl.LightningModule):
         elif self.hparams.model_name in ['LMA_P4T']:
             x_ref = batch['ref_point_clouds']
             # vis_lidar, vis_transferred, \
-            y_hat, y_transferred, y_mmwave0, y_mmwave1, \
-            l_rec_lidar, l_rec_mmwave = self.model((x, x_ref), mode='train')
-            l_pc = self.loss(y_hat, y) + self.loss(y_transferred, y)
+            y_hat, y_hat2, y_ref_hat, l_rec_lidar, l_rec_mmwave, l_conf, vis_lidar, vis_transferred = self.model((x, x_ref), mode='train')
+            l_pc = self.loss(y_hat, y) + self.loss(y_hat2, y)
 
-            l_tcon = F.mse_loss(y_mmwave0, y_mmwave1, reduction='none').mean(dim=-1)
-            l_tcon = torch.min(l_tcon, dim=-1)[0]
-            l_tcon[l_tcon < 0.01] = 0
-            l_tcon = l_tcon.mean()
+            # l_tcon = F.mse_loss(y_mmwave0, y_mmwave1, reduction='none').mean(dim=-1)
+            # l_tcon = torch.min(l_tcon, dim=-1)[0]
+            # l_tcon[l_tcon < 0.01] = 0
+            # l_tcon = l_tcon.mean()
 
-            # vis_gt = torch.zeros_like(vis_lidar, dtype=torch.float32)
-            # for i in range(len(vis_gt)):
-            #     for j in range(len(vis_gt[i])):
-            #         vis_gt[i][j][0] = torch.any(x[i, -1, :, -1] == j+1)
-            # l_vis = F.binary_cross_entropy_with_logits(vis_lidar, vis_gt) + \
-            #         F.binary_cross_entropy_with_logits(vis_transferred, vis_gt)
+            vis_gt = torch.zeros_like(vis_lidar, dtype=torch.float32)
+            for i in range(len(vis_gt)):
+                for j in range(len(vis_gt[i])):
+                    vis_gt[i][j][0] = torch.any(x[i, -1, :, -1] == j+1)
+            l_vis = F.binary_cross_entropy_with_logits(vis_lidar, vis_gt) + \
+                    F.binary_cross_entropy_with_logits(vis_transferred, vis_gt)
             
-            loss = l_pc + self.hparams.w_rec * (l_rec_lidar + l_rec_mmwave)# + self.hparams.w_tcon * l_tcon
+            loss = l_pc + self.hparams.w_rec * (l_rec_lidar + l_rec_mmwave) + self.hparams.w_conf * l_conf + self.hparams.w_vis * l_vis
 
-            losses = {'loss': loss, 'l_pc': l_pc, #'l_tcon': l_tcon, 
-                      'l_rec_lidar': l_rec_lidar, 'l_rec_mmwave': l_rec_mmwave}
+            losses = {'loss': loss, 'l_pc': l_pc, 'l_rec_mmwave': l_rec_mmwave, 'l_rec_lidar': l_rec_lidar, 'l_conf': l_conf, 'l_vis': l_vis}
+
+            # if self.hparams.use_aux:
+            #     y_ref_hat = y_ref_hat.squeeze(1)
+            #     bds = []
+            #     for b in ITOPSkeleton.bones:
+            #         bd = y_ref_hat[:, b[1]].clone() - y_ref_hat[:, b[0]].clone()
+            #         bd = bd / torch.linalg.norm(bd, axis=-1, keepdims=True)
+            #         bds.append(bd)
+            #     bds = torch.stack(bds, axis=1)
+            #     pl_dir = self.reg_dir(bds)
+            #     l_pl_dir = F.mse_loss(pl_dir, torch.zeros_like(pl_dir))
+
+            #     # y_ref_hat0, y_ref_hat1 = torch.chunk(y_ref_hat.clone(), 2, dim=0)
+            #     # bms = []
+            #     # for b in ITOPSkeleton.bones:
+            #     #     bm = y_ref_hat1[:, b[1]].clone() - y_ref_hat0[:, b[0]].clone()
+            #     #     bms.append(bm)
+            #     # bms = torch.stack(bms, axis=1)
+            #     # pl_motion = self.reg_motion(bms)
+            #     # l_pl_motion = F.mse_loss(pl_motion, torch.zeros_like(pl_motion))
+
+            #     loss += self.hparams.w_pl_dir * l_pl_dir # + self.hparams.w_pl_motion * l_pl_motion
+            #     # loss += self.hparams.w_pl_motion * l_pl_motion
+            #     losses['l_pl_dir'] = l_pl_dir
+            #     # losses['l_pl_motion'] = l_pl_motion
             
         elif self.hparams.model_name in ['LMA2_P4T']:
             x_ref = batch['ref_point_clouds']
-            y_hat, l_rec = self.model((x, x_ref), mode='train')
-            l_pc = self.loss(y_hat, y)
+            y_hat, y_hat2, l_rec = self.model((x, x_ref), mode='train')
+            l_pc = self.loss(y_hat, y) + self.loss(y_hat2, y)
             loss = l_pc + self.hparams.w_rec * l_rec
             losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec}
+
+        elif self.hparams.model_name in ['LMA3_P4T']:
+            x_ref = batch['ref_point_clouds']
+            y_loc = y[:, :, 8:9]
+            y_pose = y - y_loc
+            y_pose_hat, y_loc_hat, l_rec, l_rec_ref, l_ortho = self.model((x, x_ref), mode='train')
+            y_hat = y_pose_hat + y_loc_hat
+            l_pose = self.loss(y_pose_hat, y_pose)
+            l_loc = self.loss(y_loc_hat, y_loc)
+            loss = l_pose + self.hparams.w_loc * l_loc + self.hparams.w_rec * l_rec_ref + self.hparams.w_ortho * l_ortho
+            losses = {'loss': loss, 'l_pose': l_pose, 'l_loc': l_loc, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_ortho': l_ortho}
             
         elif self.hparams.model_name == 'PoseTransformer':
             #TODO: Implement the loss function of posetran
@@ -240,11 +322,43 @@ class LitModel(pl.LightningModule):
         c = batch['centroid']
         r = batch['radius']
 
-        x, y, y_hat = self._evaluate(batch)
-        x, y, y_hat = self._recover_data(x, y, y_hat, c, r)
+        x, y, y_hat_ = self._evaluate(batch)
+
+        # start_idx = (batch_idx * 32) % (1024 - 32)
+        # end_idx = start_idx + 32
+
+        # y_mem = self.model.forward_debug(start_idx, end_idx)
+        # y_mem = y_mem.squeeze().detach().cpu().numpy()
+        # np.save(f'logs/{self.hparams.exp_name}/{self.hparams.version}/y_mem_{start_idx}_{end_idx}.npy', y_mem)
+
+        if hasattr(self.hparams, 'use_aux') and self.hparams.use_aux:
+            y_hat = y_hat_.squeeze(1)
+            bds = []
+            for b in ITOPSkeleton.bones:
+                bd = y_hat[:, b[1]].clone() - y_hat[:, b[0]].clone()
+                bd = bd / torch.linalg.norm(bd, axis=-1, keepdims=True)
+                bds.append(bd)
+            bds = torch.stack(bds, axis=1)
+            pl_dir = self.reg_dir(bds)
+            l_pl_dir = F.mse_loss(pl_dir, torch.zeros_like(pl_dir))
+
+            y_hat0, y_hat1 = torch.chunk(y_hat.clone(), 2, dim=0)
+            bms = []
+            for b in ITOPSkeleton.bones:
+                bm = y_hat1[:, b[1]].clone() - y_hat0[:, b[0]].clone()
+                bms.append(bm)
+            bms = torch.stack(bms, axis=1)
+            pl_motion = self.reg_motion(bms)
+            l_pl_motion = F.mse_loss(pl_motion, torch.zeros_like(pl_motion))
+
+        x, y, y_hat = self._recover_data(x, y, y_hat_, c, r)
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
-        self.log_dict({'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
+        log_dict = {'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}
+        if hasattr(self.hparams, 'use_aux') and self.hparams.use_aux:
+            log_dict['test_pl_dir'] = l_pl_dir
+            log_dict['test_pl_motion'] = l_pl_motion
+        self.log_dict(log_dict, sync_dist=True)
         if batch_idx == 0:
             self._vis_pred_gt_keypoints(x, y, y_hat)
 

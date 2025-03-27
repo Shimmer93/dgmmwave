@@ -1,5 +1,11 @@
 import numpy as np
 
+JOINT_COLOR_MAP = [
+    'black', 'red', 'brown', 'blue', 'deepskyblue', 'green', 'limegreen', 'orange', 'gold', 'purple', 'deeppink',
+    'crimson', 'steelblue', 'darkviolet', 'slateblue', 'darkgoldenrod', 'turquoise', 'silver', 'salmon', 'limegreen',
+    'pink', 'khaki', 'chocolate', 'cyan', 'olive'
+]
+
 def get_flip_indices(num_joints, left_indices, right_indices):
     flip_indices = []
     for i in range(num_joints):
