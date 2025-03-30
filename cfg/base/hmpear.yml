@@ -11,7 +11,7 @@ epochs: &epochs 100
 train_dataset:
   name: TemporalDataset
   params:
-    data_path: &data_path data/lidarhuman26m.pkl
+    data_path: &data_path data/hmpear.pkl
     split: [train, val]
 val_dataset:
   name: TemporalDataset
