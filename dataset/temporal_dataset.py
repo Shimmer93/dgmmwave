@@ -20,7 +20,7 @@ class TemporalDataset(Dataset):
             self.split = list(chain(*self.split))
         
         self.data = [self.all_data['sequences'][i] for i in self.split]
-        self.seq_lens = [len(seq['point_clouds']) for seq in self.data]
+        self.seq_lens = [len(seq['keypoints']) for seq in self.data]
 
     def __len__(self):
         return np.sum(self.seq_lens)
@@ -33,6 +33,7 @@ class TemporalDataset(Dataset):
         sample = deepcopy(self.data[seq_idx])
 
         sample['dataset_name'] = self.data_path.split('/')[-1].split('.')[0]
+        sample['sequence_index'] = seq_idx
         sample['index'] = idx
         sample['centroid'] = np.array([0.,0.,0.])
         sample['radius'] = 1.
@@ -47,7 +48,7 @@ class TemporalDataset(Dataset):
     @staticmethod
     def collate_fn(batch):
         batch_data = {}
-        for key in ['point_clouds', 'keypoints', 'centroid', 'radius']:
+        for key in ['point_clouds', 'keypoints', 'centroid', 'radius', 'sequence_index']:
             batch_data[key] = torch.stack([sample[key] for sample in batch], dim=0)
 
         return batch_data

@@ -37,6 +37,7 @@ class ReferenceDataset(TemporalDataset):
         ref_sample = deepcopy(self.ref_data[ref_seq_idx])
 
         ref_sample['dataset_name'] = self.ref_data_path.split('/')[-1].split('.')[0]
+        ref_sample['sequence_index'] = ref_seq_idx
         ref_sample['index'] = ref_idx
         ref_sample['centroid'] = np.array([0.,0.,0.])
         ref_sample['radius'] = 1.

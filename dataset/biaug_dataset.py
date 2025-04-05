@@ -30,6 +30,7 @@ class BiAugDataset(Dataset):
             seq_idx += 1
         sample = deepcopy(self.data[seq_idx])
         sample['index'] = idx
+        sample['sequence_index'] = seq_idx
         sample['centroid'] = np.array([0.,0.,0.])
         sample['radius'] = 1.
         sample['scale'] = 1.

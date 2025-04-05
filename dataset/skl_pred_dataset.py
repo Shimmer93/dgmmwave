@@ -5,9 +5,9 @@ import numpy as np
 from copy import deepcopy
 from itertools import chain
 
-from dataset.temporal_dataset import TemporalDataset
+from dataset.skl_only_dataset import SklOnlyDataset
 
-class SklOnlyDataset(TemporalDataset):
+class SklPredDataset(SklOnlyDataset):
     def __init__(self, data_path, transform=None, split='train'):
         super().__init__(data_path, transform, split)
 
@@ -22,22 +22,27 @@ class SklOnlyDataset(TemporalDataset):
         sample['sequence_index'] = seq_idx
         sample['index'] = idx
 
-        sample = self.transform(sample)
+        sample_pred = deepcopy(sample)
+        sample_pred['keypoints'] = deepcopy(sample['keypoints_pred'])
 
-        return sample
+        sample = self.transform(sample)
+        sample_pred = self.transform(sample_pred)
+
+        return sample, sample_pred
 
     @staticmethod
     def collate_fn(batch):
         batch_data = {}
         keys = ['keypoints', 'sequence_index']
-        if 'bone_dirs' in batch[0].keys():
+        if 'bone_dirs' in batch[0][0].keys():
             keys.append('bone_dirs')
-        if 'bone_motions' in batch[0].keys():
+        if 'bone_motions' in batch[0][0].keys():
             keys.append('bone_motions')
-        if 'joint_motions' in batch[0].keys():
+        if 'joint_motions' in batch[0][0].keys():
             keys.append('joint_motions')
         for key in keys:
-            batch_data[key] = torch.stack([sample[key] for sample in batch], dim=0)
+            batch_data[key] = torch.stack([sample[0][key] for sample in batch], dim=0)
+            batch_data['pred_' + key] = torch.stack([sample[1][key] for sample in batch], dim=0)
 
         return batch_data
 

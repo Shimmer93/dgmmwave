@@ -14,6 +14,7 @@ from pytorch_lightning.strategies.ddp import DDPStrategy
 from dataset.data_api import LitDataModule
 from model.model_api import LitModel
 from model.model_aux_api import AuxLitModel
+from model.model_f2p_api import F2PLitModel
 # from model.model_ema_api import MeanTeacherLitModel
 from misc.utils import load_cfg, merge_args_cfg
 
@@ -26,10 +27,18 @@ def main(args):
         model = AuxLitModel(hparams=args)
         monitor = 'val_loss'
         filename = args.model_name+'-{epoch}-{val_loss:.4f}'
-    else:
-        model = LitModel(hparams=args)
+    elif args.f2p:
+        model = F2PLitModel(hparams=args)
         monitor = 'val_mpjpe'
         filename = args.model_name+'-{epoch}-{val_mpjpe:.4f}'
+    else:
+        model = LitModel(hparams=args)
+        if args.model_name in ['P4TransformerFlow']:
+            monitor = 'val_l_flow'
+            filename = args.model_name+'-{epoch}-{val_l_flow:.4f}'
+        else:
+            monitor = 'val_mpjpe'
+            filename = args.model_name+'-{epoch}-{val_mpjpe:.4f}'
     # model.load_from_checkpoint(args.checkpoint_path)
 
     callbacks = [
@@ -122,6 +131,7 @@ if __name__ == "__main__":
     parser.add_argument('--only_load_model', action='store_true')
     parser.add_argument('--mean_teacher', action='store_true')
     parser.add_argument('--aux', action='store_true')
+    parser.add_argument('--f2p', action='store_true')
 
     args = parser.parse_args()
     cfg = load_cfg(args.cfg)

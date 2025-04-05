@@ -52,6 +52,7 @@ class TiInferenceDataset(Dataset):
         sample = deepcopy(self.data[seq_idx])
 
         sample['name'] = self.seq_names[seq_idx]
+        sample['sequence_index'] = seq_idx
         sample['index'] = idx
         sample['centroid'] = np.array([0.,0.,0.])
         sample['radius'] = 1.
@@ -66,7 +67,7 @@ class TiInferenceDataset(Dataset):
     @staticmethod
     def collate_fn(batch):
         batch_data = {}
-        for key in ['point_clouds', 'centroid', 'radius']:
+        for key in ['point_clouds', 'centroid', 'radius', 'sequence_index']:
             batch_data[key] = torch.stack([sample[key] for sample in batch], dim=0)
         batch_data['index'] = [sample['index'] for sample in batch]
         batch_data['name'] = batch[0]['name']

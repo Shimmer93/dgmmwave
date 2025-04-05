@@ -150,6 +150,7 @@ class ConvertToMMWavePointCloud():
             new_pcs.append(new_pc)
 
         sample['point_clouds'] = new_pcs
+        sample['keypoints'] = sample['keypoints'][:-1]
         return sample
 
 # class ConvertToMMWavePointCloud():
@@ -352,24 +353,28 @@ class UniformSample():
         #     sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
         if self.pad_type == 'both':
             for _ in range(self.pad):
-                sample['point_clouds'].insert(0, sample['point_clouds'][0])
-                sample['point_clouds'].append(sample['point_clouds'][-1])
+                if 'point_clouds' in sample:
+                    sample['point_clouds'].insert(0, sample['point_clouds'][0])
+                    sample['point_clouds'].append(sample['point_clouds'][-1])
                 if 'keypoints' in sample:
                     sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
                     sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
         elif self.pad_type == 'start':
             for _ in range(self.pad):
-                sample['point_clouds'].insert(0, sample['point_clouds'][0])
+                if 'point_clouds' in sample:
+                    sample['point_clouds'].insert(0, sample['point_clouds'][0])
                 if 'keypoints' in sample:
                     sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
         elif self.pad_type == 'end':
             for _ in range(self.pad):
-                sample['point_clouds'].append(sample['point_clouds'][-1])
+                if 'point_clouds' in sample:
+                    sample['point_clouds'].append(sample['point_clouds'][-1])
                 if 'keypoints' in sample:
                     sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
         # start_idx = np.random.randint(0, len(sample['point_clouds']) - self.clip_len + 1)
         start_idx = sample['index']
-        sample['point_clouds'] = sample['point_clouds'][start_idx:start_idx+self.clip_len]
+        if 'point_clouds' in sample:
+            sample['point_clouds'] = sample['point_clouds'][start_idx:start_idx+self.clip_len]
         if 'keypoints' in sample:
             sample['keypoints'] = sample['keypoints'][start_idx:start_idx+self.clip_len]
         # print('uniform sample', len(sample['point_clouds']), len(sample['keypoints']))
@@ -445,6 +450,15 @@ class RandomJitter():
     def __call__(self, sample):
         for i in range(len(sample['point_clouds'])):
             sample['point_clouds'][i][...,:3] += np.random.normal(0, self.jitter_std, sample['point_clouds'][i][...,:3].shape)
+        return sample
+
+class RandomJitterKeypoints():
+    def __init__(self, jitter_std=0.01):
+        self.jitter_std = jitter_std
+
+    def __call__(self, sample):
+        for i in range(len(sample['keypoints'])):
+            sample['keypoints'][i][...,:3] += np.random.normal(0, self.jitter_std, sample['keypoints'][i][...,:3].shape)
         return sample
     
 class RandomDrop():
@@ -535,7 +549,7 @@ class Flip():
     
 class ToSimpleCOCO():
     def __call__(self, sample):
-        if sample['dataset_name'] in ['mmbody', 'lidarhuman26m']:
+        if sample['dataset_name'] in ['mmbody', 'lidarhuman26m', 'hmpear']:
             transfer_func = mmbody2simplecoco
         elif sample['dataset_name'] == 'mri':
             transfer_func = coco2simplecoco
@@ -556,7 +570,7 @@ class ToITOP():
     def __call__(self, sample):
         if sample['dataset_name'] in ['mmfi', 'mmfi_lidar']:
             transfer_func = mmfi2itop
-        elif sample['dataset_name'] in ['mmbody', 'lidarhuman26m']:
+        elif sample['dataset_name'] in ['mmbody', 'lidarhuman26m', 'hmpear']:
             transfer_func = mmbody2itop
         elif sample['dataset_name'] in ['itop_side', 'itop_top']:
             transfer_func = lambda x: x
@@ -579,9 +593,11 @@ class ToTensor():
         if 'keypoints' in sample:
             sample['keypoints'] = torch.from_numpy(sample['keypoints']).float()
         if 'action' in sample:
-            sample['action'] = torch.tensor([sample['action']]).float()
+            sample['action'] = torch.tensor([sample['action']], dtype=torch.long)
+        if 'sequence_index' in sample:
+            sample['sequence_index'] = torch.tensor([sample['sequence_index']], dtype=torch.long)
         if 'index' in sample:
-            sample['index'] = torch.tensor([sample['index']]).float()
+            sample['index'] = torch.tensor([sample['index']], dtype=torch.long)
         if 'centroid' in sample:
             sample['centroid'] = torch.from_numpy(sample['centroid']).float()
         if 'radius' in sample:
