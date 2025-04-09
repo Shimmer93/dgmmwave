@@ -196,6 +196,23 @@ class LitModel(pl.LightningModule):
             # y_hat = torch.cat([y0_hat, y0_hat + accum_flow], dim=1)
             loss = self.hparams.w_loc * l_loc + self.hparams.w_flow * l_flow + self.hparams.w_con * l_con
             losses = {'loss': loss, 'l_pose': l_pose, 'l_loc': l_loc, 'l_flow': l_flow, 'l_con': l_con}
+        elif self.hparams.model_name in ['P4TransformerFlowDA']:
+            x_ref = batch['ref_point_clouds']
+            y0 = y[:, 0:1, ...]
+            loc0 = y0[:, :, 8:9, :]
+            pose0 = y0 - loc0
+            flow = y[:, 1:, ...] - y[:, :-1, ...]
+
+            flow_lidar, loc_lidar, flow_trans, loc_trans, l_rec_lidar, l_rec_mmwave, l_conf = self.model((x, x_ref), mode='train')
+            l_flow = self.loss(flow_lidar[:, :-1, ...], flow) + self.loss(flow_trans[:, :-1, ...], flow)
+            l_loc = self.loss(loc_lidar, loc0) + self.loss(loc_trans, loc0)
+
+            y_hat = y0
+            y = y0
+
+            loss = self.hparams.w_loc * l_loc + self.hparams.w_flow * l_flow + self.hparams.w_rec * (l_rec_lidar + l_rec_mmwave) + self.hparams.w_conf * l_conf
+            losses = {'loss': loss, 'l_flow': l_flow, 'l_loc': l_loc, 'l_rec_lidar': l_rec_lidar, 'l_rec_mmwave': l_rec_mmwave, 'l_conf': l_conf}
+
         elif self.hparams.model_name in ['P4TransformerDA8', 'P4TransformerDA9']:
             x_ref = batch['ref_point_clouds']
             y_hat, y_hat_ref, y_hat2, y_hat_ref2, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
@@ -325,6 +342,9 @@ class LitModel(pl.LightningModule):
         if self.hparams.model_name in ['P4TransformerFlow']:
             y_hat, pose_hat, loc_hat, flow_hat = self.model(x)
             return x, y, y_hat, pose_hat, loc_hat, flow_hat
+        elif self.hparams.model_name in ['P4TransformerFlowDA']:
+            flow_hat, loc_hat = self.model(x)
+            return x, y, y, loc_hat, flow_hat
         else:
             y_hat = self.model(x)
             return x, y, y_hat
@@ -367,6 +387,16 @@ class LitModel(pl.LightningModule):
             l_loc = F.mse_loss(loc_hat, loc)
             l_flow = F.mse_loss(flow_hat[:, :-1, ...], flow)
 
+        elif self.hparams.model_name in ['P4TransformerFlowDA']:
+            x, y, y_hat_, loc_hat, flow_hat = self._evaluate(batch)
+            y0 = y[:, 0:1, ...]
+            loc = y0[:, :, 8:9, :]
+            flow = y[:, 1:, ...] - y[:, :-1, ...]
+            y = y[:, -2:-1, ...]
+            y_hat_ = y_hat_[:, -2:-1, ...]
+
+            l_loc = F.mse_loss(loc_hat, loc)
+            l_flow = F.mse_loss(flow_hat[:, :-1, ...], flow)
 
         else:
             x, y, y_hat_ = self._evaluate(batch)
@@ -379,6 +409,9 @@ class LitModel(pl.LightningModule):
         log_dict = {'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}
         if self.hparams.model_name in ['P4TransformerFlow']:
             log_dict['val_l_pose'] = l_pose
+            log_dict['val_l_loc'] = l_loc
+            log_dict['val_l_flow'] = l_flow
+        elif self.hparams.model_name in ['P4TransformerFlowDA']:
             log_dict['val_l_loc'] = l_loc
             log_dict['val_l_flow'] = l_flow
         self.log_dict(log_dict, sync_dist=True)
@@ -401,6 +434,17 @@ class LitModel(pl.LightningModule):
             y_hat_ = y_hat_[:, -2:-1, ...]
 
             l_pose = F.mse_loss(pose_hat, pose)
+            l_loc = F.mse_loss(loc_hat, loc)
+            l_flow = F.mse_loss(flow_hat[:, :-1, ...], flow)
+
+        elif self.hparams.model_name in ['P4TransformerFlowDA']:
+            x, y, y_hat_, loc_hat, flow_hat = self._evaluate(batch)
+            y0 = y[:, 0:1, ...]
+            loc = y0[:, :, 8:9, :]
+            flow = y[:, 1:, ...] - y[:, :-1, ...]
+            y = y[:, -2:-1, ...]
+            y_hat_ = y_hat_[:, -2:-1, ...]
+
             l_loc = F.mse_loss(loc_hat, loc)
             l_flow = F.mse_loss(flow_hat[:, :-1, ...], flow)
 
@@ -442,6 +486,9 @@ class LitModel(pl.LightningModule):
         log_dict = {'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}
         if self.hparams.model_name in ['P4TransformerFlow']:
             log_dict['test_l_pose'] = l_pose
+            log_dict['test_l_loc'] = l_loc
+            log_dict['test_l_flow'] = l_flow
+        if self.hparams.model_name in ['P4TransformerFlowDA']:
             log_dict['test_l_loc'] = l_loc
             log_dict['test_l_flow'] = l_flow
         if hasattr(self.hparams, 'use_aux') and self.hparams.use_aux:

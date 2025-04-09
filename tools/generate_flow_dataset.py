@@ -34,27 +34,32 @@ def generate_split(data):
         split_seqs[i]['keypoints_pred'] = np.array(split_seqs[i]['keypoints_pred'])[:, 0, ...]
         flow = np.array(split_seqs[i]['flow'])
         N, T, J, D = flow.shape
-        flow_ = np.zeros((N + T - 1, J, D))
-        flow_mag_table = np.zeros((N + T - 1, N, J))
-        for j in range(T):
-            flow_[j:j+N] += flow[:, j]
-            flow_[-1 * j] *= (T / (j + 1))
-        for k in range(N):
-            flow_mag_table[k:k+T, k] = np.linalg.norm(flow[k], axis=-1)
-        flow_stds = np.zeros((N, J))
-        for k in range(N):
-            for l in range(J):
-                flow_mags = flow_mag_table[k, :, l]
-                flow_mags = flow_mags[flow_mags > 0]
-                print(flow_mags)
-                flow_std = np.std(flow_mags)
-                flow_stds[k, l] = flow_std
-        flow_std_list.append(flow_stds)
 
-        flow = flow_[T-1:]
-        split_seqs[i]['flow'] = flow / T
+        flow = flow[:, -1, ...]
 
-    write_pkl('flow_std.pkl', flow_std_list)
+        # flow_ = np.zeros((N + T - 1, J, D))
+        # # flow_mag_table = np.zeros((N + T - 1, N, J))
+        # for j in range(T):
+        #     flow_[j:j+N] += flow[:, j]
+        #     flow_[-1 * j] *= (T / (j + 1))
+
+        # for k in range(N):
+        #     flow_mag_table[k:k+T, k] = np.linalg.norm(flow[k], axis=-1)
+        # flow_stds = np.zeros((N, J))
+        # for k in range(N):
+        #     for l in range(J):
+        #         flow_mags = flow_mag_table[k, :, l]
+        #         flow_mags = flow_mags[flow_mags > 0]
+        #         print(flow_mags)
+        #         flow_std = np.std(flow_mags)
+        #         flow_stds[k, l] = flow_std
+        # flow_std_list.append(flow_stds)
+
+        # flow = flow_[T-1:]
+        # split_seqs[i]['flow'] = flow / T
+        split_seqs[i]['flow'] = flow
+
+    # write_pkl('flow_std.pkl', flow_std_list)
 
     return split_seqs, split_idxs
 

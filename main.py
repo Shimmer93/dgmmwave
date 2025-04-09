@@ -33,7 +33,7 @@ def main(args):
         filename = args.model_name+'-{epoch}-{val_mpjpe:.4f}'
     else:
         model = LitModel(hparams=args)
-        if args.model_name in ['P4TransformerFlow']:
+        if args.model_name in ['P4TransformerFlow', 'P4TransformerFlowDA']:
             monitor = 'val_l_flow'
             filename = args.model_name+'-{epoch}-{val_l_flow:.4f}'
         else:

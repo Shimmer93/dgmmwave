@@ -86,9 +86,9 @@ class F2PLitModel(pl.LightningModule):
             x = y[:, 1:, ...] - y[:, :-1, ...]
 
         y_hat = self.model(x)
-        left_indices = [3, 5, 7, 10, 12, 14]
-        right_indices = [2, 4, 6, 9, 11, 13]
-        y_hat[:, :, left_indices+right_indices, :] = y_hat[:, :, right_indices+left_indices, :]
+        # left_indices = [3, 5, 7, 10, 12, 14]
+        # right_indices = [2, 4, 6, 9, 11, 13]
+        # y_hat[:, :, left_indices+right_indices, :] = y_hat[:, :, right_indices+left_indices, :]
 
         return torch2numpy(x), torch2numpy(y[:, :-1, ...]), torch2numpy(y_hat)
 
