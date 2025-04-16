@@ -74,14 +74,16 @@ def compute_similarity_transform(X, Y, compute_optimal_scale=False):
 
     return d, Z, T, b, c
 
-def calulate_error(preds, gts):
+def calulate_error(preds, gts, reduce=True):
     """
     Compute MPJPE and PA-MPJPE given predictions and ground-truths.
     """
     N = preds.shape[0]
     num_joints = preds.shape[-2]
 
-    mpjpe = np.mean(np.sqrt(np.sum(np.square(preds - gts), axis=-1)))
+    mpjpe = np.sqrt(np.sum(np.square(preds - gts), axis=-1))
+    if reduce: 
+        mpjpe = np.mean(mpjpe)
 
     pampjpe = np.zeros([N, num_joints])
 
@@ -92,6 +94,7 @@ def calulate_error(preds, gts):
         frame_pred = (b * frame_pred.dot(T)) + c
         pampjpe[n] = np.sqrt(np.sum(np.square(frame_pred - frame_gt), axis=1))
 
-    pampjpe = np.mean(pampjpe)
+    if reduce:
+        pampjpe = np.mean(pampjpe)
 
     return mpjpe, pampjpe

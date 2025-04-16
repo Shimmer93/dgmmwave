@@ -21,8 +21,8 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmfi.pkl
-    split: train_rdn_p3
+    data_path: *data_path #data/mmfi.pkl
+    split: test
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -73,11 +73,11 @@ w_con: 0.001
 train_pipeline:
   - name: UniformSample
     params:
-      pad_type: 'start'
+      pad_type: 'end'
       clip_len: 5
   - name: GetCentroid
     params: 
-      centroid_type: 'zonly'
+      centroid_type: 'median'
   - name: Normalize
     params:
       feat_scale: null
@@ -86,12 +86,12 @@ train_pipeline:
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
-      radius: 1.5
+      radius: 1.25
   - name: AddNoisyPoints
     params:
-      add_std: 0.2
+      add_std: 1.0
       num_added: 32
-      zero_centered: false
+      zero_centered: True
     prob: 0.5
   - name: GenerateSegmentationGroundTruth
     params: 
@@ -100,12 +100,6 @@ train_pipeline:
     params:
       dist_threshold: 0.01
       default_num_points: 32
-  - name: AddPointsAroundJoint
-    params:
-      add_std: 0.2
-      max_num2add: 2
-      num_added: 32
-    prob: 0.5
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -126,18 +120,18 @@ train_pipeline:
       max_len: 256
   - name: RandomJitter
     params:
-      jitter_std: 0.05
+      jitter_std: 0.02
     prob: 0.5
   - name: ToTensor
     params: null
 val_pipeline: &val_pipeline
   - name: UniformSample
     params:
-      pad_type: 'start'
+      pad_type: 'end'
       clip_len: 5
   - name: GetCentroid
     params: 
-      centroid_type: 'zonly'
+      centroid_type: 'median'
   - name: ToITOP
     params: null
   - name: Normalize
@@ -146,7 +140,7 @@ val_pipeline: &val_pipeline
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
-      radius: 1.5
+      radius: 1.25
   - name: GenerateSegmentationGroundTruth
     params: 
       padding: 0.25
@@ -154,6 +148,9 @@ val_pipeline: &val_pipeline
     params:
       dist_threshold: 0.01
       default_num_points: 32
+  # - name: DropPointsAtSegmentedJoints
+  #   params:
+  #     max_num2drop: 2
   - name: Pad
     params:
       max_len: 256
@@ -162,7 +159,7 @@ val_pipeline: &val_pipeline
 test_pipeline: *val_pipeline
   # - name: UniformSample
   #   params:
-  #     pad_type: 'start'
+  #     pad_type: 'end'
   #     clip_len: 5
   # - name: GetCentroid
   #   params: 
@@ -175,7 +172,7 @@ test_pipeline: *val_pipeline
   # - name: RemoveOutliers
   #   params: 
   #     outlier_type: 'box'
-  #     radius: 1.5
+  #     radius: 1.25
   # - name: Pad
   #   params:
   #     max_len: 256

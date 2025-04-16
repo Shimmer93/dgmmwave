@@ -72,11 +72,11 @@ w_mem: 0.001
 train_pipeline:
   - name: UniformSample
     params: 
-      pad_type: 'start'
+      pad_type: 'end'
       clip_len: 5
   - name: GetCentroid
     params: 
-      centroid_type: 'zonly'
+      centroid_type: 'median'
   - name: Normalize
     params:
       feat_scale: null
@@ -122,7 +122,7 @@ train_pipeline:
   - name: ReduceKeypointLen
     params:
       only_one: true
-      keep_type: 'end'
+      keep_type: 'start'
       frame_to_reduce: 0
   - name: Pad
     params:
@@ -136,11 +136,11 @@ train_pipeline:
 val_pipeline: &val_pipeline
   - name: UniformSample
     params:
-      pad_type: 'start'
+      pad_type: 'end'
       clip_len: 5
   - name: GetCentroid
     params: 
-      centroid_type: 'zonly'
+      centroid_type: 'median'
   - name: ToITOP
     params: null
   - name: Normalize
@@ -153,7 +153,7 @@ val_pipeline: &val_pipeline
   - name: ReduceKeypointLen
     params:
       only_one: true
-      keep_type: 'end'
+      keep_type: 'start'
       frame_to_reduce: 0
   - name: Pad
     params:
@@ -163,11 +163,11 @@ val_pipeline: &val_pipeline
 test_pipeline:
   - name: UniformSample
     params:
-      pad_type: 'start'
+      pad_type: 'end'
       clip_len: 5
   - name: GetCentroid
     params: 
-      centroid_type: 'zonly'
+      centroid_type: 'median'
   - name: ToITOP
     params: null
   - name: Normalize
@@ -180,7 +180,7 @@ test_pipeline:
   - name: ReduceKeypointLen
     params:
       only_one: true
-      keep_type: 'end'
+      keep_type: 'start'
       frame_to_reduce: 0
   - name: Pad
     params:

@@ -168,20 +168,20 @@ class LitModel(pl.LightningModule):
         if self.hparams.model_name in ['P4TransformerFlow']:
             # B, T, J, C = y.shape
             y0 = y[:, 0:1, ...]
-            loc0 = y0[:, :, 8:9, :]
+            loc0 = y0[:, :, 0:1, :]
             pose0 = y0 - loc0
-            y1 = y[:, 1:2, ...]
-            loc1 = y1[:, :, 8:9, :]
-            pose1 = y1 - loc1
+            # y1 = y[:, 1:2, ...]
+            # loc1 = y1[:, :, 0:1, :]
+            # pose1 = y1 - loc1
             flow = y[:, 1:, ...] - y[:, :-1, ...]
 
             pose_hat0, loc_hat0, flow_hat0 = self.model(x[:, :-1, ...])
-            pose_hat1, loc_hat1, flow_hat1 = self.model(x[:, 1:, ...])
+            # pose_hat1, loc_hat1, flow_hat1 = self.model(x[:, 1:, ...])
 
-            l_pose = self.loss(pose_hat0, pose0) + self.loss(pose_hat1, pose1)
-            l_loc = self.loss(loc_hat0, loc0) + self.loss(loc_hat1, loc1)
-            l_flow = self.loss(flow_hat0[:, :-1, ...], flow[:, :-1, ...]) + self.loss(flow_hat1[:, :-1, ...], flow[:, 1:, ...])
-            l_con = self.loss(flow_hat0[:, 1:, ...], flow_hat1[:, :-1, ...])
+            l_pose = self.loss(pose_hat0, pose0) # + self.loss(pose_hat1, pose1)
+            l_loc = self.loss(loc_hat0, loc0) # + self.loss(loc_hat1, loc1)
+            l_flow = self.loss(flow_hat0, flow) # + self.loss(flow_hat1[:, :-1, ...], flow[:, 1:, ...])
+            # l_con = self.loss(flow_hat0[:, 1:, ...], flow_hat1[:, :-1, ...])
 
             # y0_hat = pose_hat0 + loc_hat0
             # y1_hat = pose_hat1 + loc_hat1
@@ -194,8 +194,8 @@ class LitModel(pl.LightningModule):
             # l_flow2 = self.loss(flow_hat2, flow)
             # accum_flow = torch.cumsum(flow_hat0[:, :-1, ...], dim=1)
             # y_hat = torch.cat([y0_hat, y0_hat + accum_flow], dim=1)
-            loss = self.hparams.w_loc * l_loc + self.hparams.w_flow * l_flow + self.hparams.w_con * l_con
-            losses = {'loss': loss, 'l_pose': l_pose, 'l_loc': l_loc, 'l_flow': l_flow, 'l_con': l_con}
+            loss = self.hparams.w_loc * l_loc + self.hparams.w_flow * l_flow # + self.hparams.w_con * l_con
+            losses = {'loss': loss, 'l_pose': l_pose, 'l_loc': l_loc, 'l_flow': l_flow} #, 'l_con': l_con}
         elif self.hparams.model_name in ['P4TransformerFlowDA']:
             x_ref = batch['ref_point_clouds']
             y0 = y[:, 0:1, ...]
@@ -340,10 +340,12 @@ class LitModel(pl.LightningModule):
         x = batch['point_clouds']
         y = batch['keypoints']
         if self.hparams.model_name in ['P4TransformerFlow']:
-            y_hat, pose_hat, loc_hat, flow_hat = self.model(x)
+            y_hat, pose_hat, loc_hat, flow_hat = self.model(x[:, :-1, ...])
+            accum_flow_hat = torch.cumsum(flow_hat, dim=1)
+            y_hat = torch.cat((y_hat[:, 0:1, ...], accum_flow_hat), dim=1)
             return x, y, y_hat, pose_hat, loc_hat, flow_hat
         elif self.hparams.model_name in ['P4TransformerFlowDA']:
-            flow_hat, loc_hat = self.model(x)
+            flow_hat, loc_hat = self.model(x[:, :-1, ...])
             return x, y, y, loc_hat, flow_hat
         else:
             y_hat = self.model(x)
@@ -380,12 +382,12 @@ class LitModel(pl.LightningModule):
             loc = y0[:, :, 8:9, :]
             pose = y0 - loc
             flow = y[:, 1:, ...] - y[:, :-1, ...]
-            y = y[:, -2:-1, ...]
-            y_hat_ = y_hat_[:, -2:-1, ...]
+            y = y[:, 0:1, ...]
+            y_hat_ = y_hat_[:, 0:1, ...]
 
             l_pose = F.mse_loss(pose_hat, pose)
             l_loc = F.mse_loss(loc_hat, loc)
-            l_flow = F.mse_loss(flow_hat[:, :-1, ...], flow)
+            l_flow = F.mse_loss(flow_hat, flow)
 
         elif self.hparams.model_name in ['P4TransformerFlowDA']:
             x, y, y_hat_, loc_hat, flow_hat = self._evaluate(batch)
@@ -430,12 +432,12 @@ class LitModel(pl.LightningModule):
             loc = y0[:, :, 8:9, :]
             pose = y0 - loc
             flow = y[:, 1:, ...] - y[:, :-1, ...]
-            y = y[:, -2:-1, ...]
-            y_hat_ = y_hat_[:, -2:-1, ...]
+            y = y[:, 0:1, ...]
+            y_hat_ = y_hat_[:, 0:1, ...]
 
             l_pose = F.mse_loss(pose_hat, pose)
             l_loc = F.mse_loss(loc_hat, loc)
-            l_flow = F.mse_loss(flow_hat[:, :-1, ...], flow)
+            l_flow = F.mse_loss(flow_hat, flow)
 
         elif self.hparams.model_name in ['P4TransformerFlowDA']:
             x, y, y_hat_, loc_hat, flow_hat = self._evaluate(batch)
@@ -506,27 +508,72 @@ class LitModel(pl.LightningModule):
 
     def on_test_end(self):
         if self.hparams.save_when_test:
-            results_to_save = {'pred': [], 'gt': [], 'input': [], 'seq_idx': []}
-            if self.hparams.model_name in ['P4TransformerFlow']:
-                results_to_save['flow'] = []
+            mpjpes = []
+            pampjpes = []
+            split_seqs = []
+            split_idxs = []
+            last_seq_idx = -1
 
             for result in self.results:
-                results_to_save['pred'].append(result['pred'])
-                results_to_save['gt'].append(result['gt'])
-                results_to_save['input'].append(result['input'])
-                results_to_save['seq_idx'].append(result['seq_idx'])
-                if self.hparams.model_name in ['P4TransformerFlow']:
-                    results_to_save['flow'].append(result['flow'])
+                for i in range(len(result['pred'])):
+                    gt = result['gt'][i]
+                    pred = result['pred'][i]
+                    input = result['input'][i]
+                    seq_idx = int(result['seq_idx'][i].item())
+                    if self.hparams.model_name in ['P4TransformerFlow']:
+                        flow = result['flow'][i]
+                    if seq_idx != last_seq_idx:
+                        last_seq_idx = seq_idx
+                        split_seqs.append({'keypoints': [], 'keypoints_pred': [], 'input': []})
+                        if self.hparams.model_name in ['P4TransformerFlow']:
+                            split_seqs[-1]['flow'] = []
+                        split_idxs.append(seq_idx)
+                    split_seqs[-1]['keypoints'].append(gt)
+                    split_seqs[-1]['keypoints_pred'].append(pred)
+                    split_seqs[-1]['input'].append(input)
+                    if self.hparams.model_name in ['P4TransformerFlow']:
+                        split_seqs[-1]['flow'].append(flow)
 
-            results_to_save['pred'] = np.concatenate(results_to_save['pred'], axis=0)
-            results_to_save['gt'] = np.concatenate(results_to_save['gt'], axis=0)
-            results_to_save['input'] = np.concatenate(results_to_save['input'], axis=0)
-            results_to_save['seq_idx'] = np.concatenate(results_to_save['seq_idx'], axis=0)
-            if self.hparams.model_name in ['P4TransformerFlow']:
-                results_to_save['flow'] = np.concatenate(results_to_save['flow'], axis=0)
+            for i in range(len(split_seqs)):
+                split_seqs[i]['keypoints'] = np.array(split_seqs[i]['keypoints'])[:, 0, ...]
+                split_seqs[i]['input'] = np.array(split_seqs[i]['input'])[:, 0, ...]
+                
+                kps_pred = np.array(split_seqs[i]['keypoints_pred'])
+                N, T, J, D = kps_pred.shape
+                kps_pred_ = np.zeros((N + T - 1, J, D))
+                for j in range(T):
+                    kps_pred_[j:j+N] += kps_pred[:, j]
+                for j in range(T):
+                    kps_pred_[j] *= (T / (j + 1))
+                kps_pred = kps_pred_[:N]
+                split_seqs[i]['keypoints_pred'] = kps_pred / T
+                # split_seqs[i]['keypoints_pred'] = kps_pred[:, 0, ...]
+
+                if self.hparams.model_name in ['P4TransformerFlow']:
+                    flow = np.array(split_seqs[i]['flow'])
+                    N, T, J, D = flow.shape
+                    flow_ = np.zeros((N + T - 1, J, D))
+                    for j in range(T):
+                        flow_[j:j+N] += flow[:, j]
+                    for j in range(T):
+                        flow_[j] *= (T / (j + 1))
+                    flow = flow_[:N]
+                    split_seqs[i]['flow'] = flow / T
+                    # split_seqs[i]['flow'] = flow[:, 0, ...]
+
+                if kps_pred.shape[0] > 0:
+                    mpjpe, pampjpe = calulate_error(split_seqs[i]['keypoints_pred'][:, np.newaxis], split_seqs[i]['keypoints'][:, np.newaxis], reduce=False)
+                    mpjpes.append(mpjpe)
+                    pampjpes.append(pampjpe)
+
+            mpjpes = np.concatenate(mpjpes, axis=0)
+            pampjpes = np.concatenate(pampjpes, axis=0)
+            mpjpe = np.mean(mpjpes)
+            pampjpe = np.mean(pampjpes)
+            print(f'Final MPJPE: {mpjpe}, PAMJPE: {pampjpe}')
 
             with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
-                pickle.dump(results_to_save, f)
+                pickle.dump(split_seqs, f)
 
         return super().on_test_end()
 
@@ -534,14 +581,67 @@ class LitModel(pl.LightningModule):
         x = batch['point_clouds']
         c = batch['centroid']
         r = batch['radius']
+        si = batch['sequence_index']
 
         y_hat = self.model(x)
         x = self._recover_point_cloud(x, c, r)
         y_hat = self._recover_skeleton(y_hat, c, r)
         
-        pred = {'name': batch['name'], 'index': batch['index'], 'keypoints': y_hat, 'point_clouds': x}
-        
-        return pred
+        result = {'pred': y_hat, 'input': x, 'seq_idx': torch2numpy(si)}
+        self.results.append(result)
+
+    def on_predict_end(self):
+        if self.hparams.save_when_test:
+            split_seqs = []
+            split_idxs = []
+            last_seq_idx = -1
+
+            for result in self.results:
+                for i in range(len(result['pred'])):
+                    pred = result['pred'][i]
+                    input = result['input'][i]
+                    seq_idx = int(result['seq_idx'][i].item())
+                    if self.hparams.model_name in ['P4TransformerFlow']:
+                        flow = result['flow'][i]
+                    if seq_idx != last_seq_idx:
+                        last_seq_idx = seq_idx
+                        split_seqs.append({'keypoints_pred': [], 'input': []})
+                        if self.hparams.model_name in ['P4TransformerFlow']:
+                            split_seqs[-1]['flow'] = []
+                        split_idxs.append(seq_idx)
+                    split_seqs[-1]['keypoints_pred'].append(pred)
+                    split_seqs[-1]['input'].append(input)
+                    if self.hparams.model_name in ['P4TransformerFlow']:
+                        split_seqs[-1]['flow'].append(flow)
+
+            for i in range(len(split_seqs)):
+                split_seqs[i]['input'] = np.array(split_seqs[i]['input'])[:, 0, ...]
+                
+                kps_pred = np.array(split_seqs[i]['keypoints_pred'])
+                N, T, J, D = kps_pred.shape
+                kps_pred_ = np.zeros((N + T - 1, J, D))
+                for j in range(T):
+                    kps_pred_[j:j+N] += kps_pred[:, j]
+                for j in range(T):
+                    kps_pred_[j] *= (T / (j + 1))
+                kps_pred = kps_pred_[:N]
+                split_seqs[i]['keypoints_pred'] = kps_pred / T
+
+                if self.hparams.model_name in ['P4TransformerFlow']:
+                    flow = np.array(split_seqs[i]['flow'])
+                    N, T, J, D = flow.shape
+                    flow_ = np.zeros((N + T - 1, J, D))
+                    for j in range(T):
+                        flow_[j:j+N] += flow[:, j]
+                    for j in range(T):
+                        flow_[j] *= (T / (j + 1))
+                    flow = flow_[:N]
+                    split_seqs[i]['flow'] = flow / T
+
+            with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
+                pickle.dump(split_seqs, f)
+
+        return super().on_predict_end()
 
     def configure_optimizers(self):
         optimizer = create_optimizer(self.hparams.optim_name, self.hparams.optim_params, self.model.parameters())

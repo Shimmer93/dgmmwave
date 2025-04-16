@@ -56,41 +56,48 @@ class F2PLitModel(pl.LightningModule):
     def _calculate_loss(self, batch):
         y = batch['keypoints']
         y = y - y[:, :, 8:9, :]
-        if 'pred_keypoints' in batch.keys():
-            y_ = batch['pred_keypoints']
-            y_ = y_ - y_[:, :, 8:9, :]
+        if 'flow' in batch.keys():
+            x = batch['flow']
+            # if torch.rand(1) < 0.5:
+            #     x = x + torch.randn_like(x) * 0.01
+        # elif 'pred_keypoints' in batch.keys():
+        #     y_ = batch['pred_keypoints']
+        #     y_ = y_ - y_[:, :, 8:9, :]
+        #     x = y_[:, 1:, ...] - y_[:, :-1, ...]
+        #     y = y[:, :-1, ...]
+        elif torch.rand(1) < 0.8:
+            y_ = y + torch.randn_like(y) * 0.02
             x = y_[:, 1:, ...] - y_[:, :-1, ...]
-        elif 'flow' in batch.keys():
-            x = batch['flow'][:, :-1, ...]
-        elif torch.rand(1) < 0.5:
-            y_ = y + torch.randn_like(y) * 0.005
-            x = y_[:, 1:, ...] - y_[:, :-1, ...]
+            y = y[:, :-1, ...]
         else:
             x = y[:, 1:, ...] - y[:, :-1, ...]
+            y = y[:, :-1, ...]
         
         y_hat = self.model(x)
-        loss = self.loss(y_hat, y[:, :-1, ...])
+        loss = self.loss(y_hat, y)
 
-        return {'loss': loss}, torch2numpy(x), torch2numpy(y[:, :-1, ...]), torch2numpy(y_hat)
+        return {'loss': loss}, torch2numpy(x), torch2numpy(y), torch2numpy(y_hat)
 
     def _evaluate(self, batch):
         y = batch['keypoints']
         y = y - y[:, :, 8:9, :]
-        if 'pred_keypoints' in batch.keys():
-            y_ = batch['pred_keypoints']
-            y_ = y_ - y_[:, :, 8:9, :]
-            x = y_[:, 1:, ...] - y_[:, :-1, ...]
-        elif 'flow' in batch.keys():
-            x = batch['flow'][:, :-1, ...]
+        if 'flow' in batch.keys():
+            x = batch['flow']
+        # elif 'pred_keypoints' in batch.keys():
+        #     y_ = batch['pred_keypoints']
+        #     y_ = y_ - y_[:, :, 8:9, :]
+        #     x = y_[:, 1:, ...] - y_[:, :-1, ...]
+        #     y = y[:, :-1, ...]
         else:
             x = y[:, 1:, ...] - y[:, :-1, ...]
+            y = y[:, :-1, ...]
 
         y_hat = self.model(x)
         # left_indices = [3, 5, 7, 10, 12, 14]
         # right_indices = [2, 4, 6, 9, 11, 13]
         # y_hat[:, :, left_indices+right_indices, :] = y_hat[:, :, right_indices+left_indices, :]
 
-        return torch2numpy(x), torch2numpy(y[:, :-1, ...]), torch2numpy(y_hat)
+        return torch2numpy(x), torch2numpy(y), torch2numpy(y_hat)
 
     def training_step(self, batch, batch_idx):
         losses, x, y, y_hat = self._calculate_loss(batch)
@@ -118,26 +125,58 @@ class F2PLitModel(pl.LightningModule):
         self.log_dict({'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
 
         if self.hparams.save_when_test:
-            result = {'pred': y_hat, 'gt': y, 'input': x, 'seq_idx': torch2numpy(si)}
+            result = {'pred': y_hat, 'gt': y, 'flow': x, 'seq_idx': torch2numpy(si)}
             self.results.append(result)
 
     def on_test_end(self):
         if self.hparams.save_when_test:
-            results_to_save = {'pred': [], 'gt': [], 'input': [], 'seq_idx': []}
+            mpjpes = []
+            pampjpes = []
+            split_seqs = []
+            split_idxs = []
+            last_seq_idx = -1
 
             for result in self.results:
-                results_to_save['pred'].append(result['pred'])
-                results_to_save['gt'].append(result['gt'])
-                results_to_save['input'].append(result['input'])
-                results_to_save['seq_idx'].append(result['seq_idx'])
+                for i in range(len(result['pred'])):
+                    gt = result['gt'][i]
+                    pred = result['pred'][i]
+                    flow = result['flow'][i]
+                    seq_idx = int(result['seq_idx'][i].item())
+                    if seq_idx != last_seq_idx:
+                        last_seq_idx = seq_idx
+                        split_seqs.append({'keypoints': [], 'keypoints_pred': [], 'flow': []})
+                        split_idxs.append(seq_idx)
+                    split_seqs[-1]['keypoints'].append(gt)
+                    split_seqs[-1]['keypoints_pred'].append(pred)
+                    split_seqs[-1]['flow'].append(flow)
 
-            results_to_save['pred'] = np.concatenate(results_to_save['pred'], axis=0)
-            results_to_save['gt'] = np.concatenate(results_to_save['gt'], axis=0)
-            results_to_save['input'] = np.concatenate(results_to_save['input'], axis=0)
-            results_to_save['seq_idx'] = np.concatenate(results_to_save['seq_idx'], axis=0)
+            for i in range(len(split_seqs)):
+                split_seqs[i]['keypoints'] = np.array(split_seqs[i]['keypoints'])[:, 0, ...]
+                split_seqs[i]['flow'] = np.array(split_seqs[i]['flow'])[:, 0, ...]
+                
+                kps_pred = np.array(split_seqs[i]['keypoints_pred'])
+                N, T, J, D = kps_pred.shape
+                kps_pred_ = np.zeros((N + T - 1, J, D))
+                for j in range(T):
+                    kps_pred_[j:j+N] += kps_pred[:, j]
+                for j in range(T):
+                    kps_pred_[j] *= (T / (j + 1))
+                kps_pred = kps_pred_[:N]
+                split_seqs[i]['keypoints_pred'] = kps_pred / T
+
+                if kps_pred.shape[0] > 0:
+                    mpjpe, pampjpe = calulate_error(split_seqs[i]['keypoints_pred'][:, np.newaxis], split_seqs[i]['keypoints'][:, np.newaxis], reduce=False)
+                    mpjpes.append(mpjpe)
+                    pampjpes.append(pampjpe)
+
+            mpjpes = np.concatenate(mpjpes, axis=0)
+            pampjpes = np.concatenate(pampjpes, axis=0)
+            mpjpe = np.mean(mpjpes)
+            pampjpe = np.mean(pampjpes)
+            print(f'Final MPJPE: {mpjpe}, PAMJPE: {pampjpe}')
 
             with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
-                pickle.dump(results_to_save, f)
+                pickle.dump(split_seqs, f)
 
         return super().on_test_end()
 

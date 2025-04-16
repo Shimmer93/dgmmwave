@@ -11,7 +11,7 @@ epochs: &epochs 100
 train_dataset:
   name: SklFlowDataset
   params:
-    data_path: &data_path data/flow/lidarhuman26m.pkl
+    data_path: &data_path data/flow2/lidarhuman26m.pkl
     split: [train, val]
 val_dataset:
   name: SklFlowDataset
@@ -48,7 +48,7 @@ model_params:
   num_point: 15
   graph_name: 'itop'
   in_channels: 3
-  drop_out: 0
+  drop_out: 0.1
   adaptive: true
 # --------------------------------------
 # Loss parameters
@@ -64,8 +64,8 @@ w_flow: 1.0
 train_pipeline:
   - name: UniformSample
     params:
-      pad_type: 'start'
-      clip_len: 31
+      pad_type: 'end'
+      clip_len: 30
   # - name: ToITOP
   #   params: null
   - name: ToTensor
@@ -73,8 +73,8 @@ train_pipeline:
 val_pipeline: &val_pipeline
   - name: UniformSample
     params:
-      pad_type: 'start'
-      clip_len: 31
+      pad_type: 'end'
+      clip_len: 30
   # - name: ToITOP
   #   params: null
   - name: ToTensor

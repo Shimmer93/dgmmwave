@@ -16,11 +16,29 @@ def load_results(path):
     with open(path, 'rb') as f:
         results = pickle.load(f)
 
-    pcs = results['input'][:, -1][..., [0, 2, 1]]
-    kps_gt = results['gt'][:, -1][..., [0, 2, 1]]
-    kps_gt = kps_gt - kps_gt[:, 8:9, :]
-    kps_pred = results['pred'][:, -1][..., [0, 2, 1]]
-    seq_idxs = results['seq_idx']
+    # pcs = results['input'][..., [0, 2, 1]]
+    # kps_gt = results['gt'][..., [0, 2, 1]]
+    # kps_gt = kps_gt - kps_gt[:, 8:9, :]
+    # kps_pred = results['pred'][..., [0, 2, 1]]
+    # kps_pred = kps_pred - kps_pred[:, 8:9, :]
+    # seq_idxs = results['seq_idx']
+
+    pcs = []
+    kps_gt = []
+    kps_pred = []
+    seq_idxs = []
+    for i, seq in enumerate(results):
+        pcs.append(seq['flow'][..., [0, 2, 1]])
+        kps_gt.append(seq['keypoints'][..., [0, 2, 1]])
+        kps_gt[-1] = kps_gt[-1] - kps_gt[-1][:, 8:9, :]
+        kps_pred.append(seq['keypoints_pred'][..., [0, 2, 1]])
+        kps_pred[-1] = kps_pred[-1] - kps_pred[-1][:, 8:9, :]
+        seq_idxs.append(np.ones(seq['keypoints'].shape[0]) * i)
+    pcs = np.concatenate(pcs, axis=0)
+    kps_gt = np.concatenate(kps_gt, axis=0)
+    kps_pred = np.concatenate(kps_pred, axis=0)
+    seq_idxs = np.concatenate(seq_idxs, axis=0)
+
     return pcs, kps_gt, kps_pred, seq_idxs
 
 def get_edges(skeleton_type):
