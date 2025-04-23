@@ -56,18 +56,19 @@ class F2PLitModel(pl.LightningModule):
     def _calculate_loss(self, batch):
         y = batch['keypoints']
         y = y - y[:, :, 8:9, :]
-        if 'flow' in batch.keys():
-            x = batch['flow']
+        # if 'flow' in batch.keys():
+        #     x = batch['flow']
             # if torch.rand(1) < 0.5:
-            #     x = x + torch.randn_like(x) * 0.01
+            #     x = x + torch.randn_like(x) * 0.05
         # elif 'pred_keypoints' in batch.keys():
         #     y_ = batch['pred_keypoints']
         #     y_ = y_ - y_[:, :, 8:9, :]
         #     x = y_[:, 1:, ...] - y_[:, :-1, ...]
         #     y = y[:, :-1, ...]
-        elif torch.rand(1) < 0.8:
-            y_ = y + torch.randn_like(y) * 0.02
+        if torch.rand(1) < 0.5:
+            y_ = y# + torch.randn_like(y) * 0.02
             x = y_[:, 1:, ...] - y_[:, :-1, ...]
+            x = x + torch.randn_like(x) * 0.05
             y = y[:, :-1, ...]
         else:
             x = y[:, 1:, ...] - y[:, :-1, ...]

@@ -359,24 +359,33 @@ class UniformSample():
                 if 'keypoints' in sample:
                     sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
                     sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
+                if 'flow' in sample:
+                    sample['flow'] = np.concatenate([np.zeros_like(sample['flow'][0][np.newaxis]), sample['flow']], axis=0)
+                    sample['flow'] = np.concatenate([sample['flow'], np.zeros_like(sample['flow'][0][np.newaxis])], axis=0)
         elif self.pad_type == 'start':
             for _ in range(self.pad):
                 if 'point_clouds' in sample:
                     sample['point_clouds'].insert(0, sample['point_clouds'][0])
                 if 'keypoints' in sample:
                     sample['keypoints'] = np.concatenate([sample['keypoints'][0][np.newaxis], sample['keypoints']], axis=0)
+                if 'flow' in sample:
+                    sample['flow'] = np.concatenate([np.zeros_like(sample['flow'][0][np.newaxis]), sample['flow']], axis=0)
         elif self.pad_type == 'end':
             for _ in range(self.pad):
                 if 'point_clouds' in sample:
                     sample['point_clouds'].append(sample['point_clouds'][-1])
                 if 'keypoints' in sample:
                     sample['keypoints'] = np.concatenate([sample['keypoints'], sample['keypoints'][-1][np.newaxis]], axis=0)
+                if 'flow' in sample:
+                    sample['flow'] = np.concatenate([sample['flow'], np.zeros_like(sample['flow'][0][np.newaxis])], axis=0)
         # start_idx = np.random.randint(0, len(sample['point_clouds']) - self.clip_len + 1)
         start_idx = sample['index']
         if 'point_clouds' in sample:
             sample['point_clouds'] = sample['point_clouds'][start_idx:start_idx+self.clip_len]
         if 'keypoints' in sample:
             sample['keypoints'] = sample['keypoints'][start_idx:start_idx+self.clip_len]
+        if 'flow' in sample:
+            sample['flow'] = sample['flow'][start_idx:start_idx+self.clip_len]
         # print('uniform sample', len(sample['point_clouds']), len(sample['keypoints']))
         return sample
     
@@ -592,6 +601,8 @@ class ToTensor():
                 sample['point_clouds'] = torch.from_numpy(sample['point_clouds']).float()
         if 'keypoints' in sample:
             sample['keypoints'] = torch.from_numpy(sample['keypoints']).float()
+        if 'flow' in sample:
+            sample['flow'] = torch.from_numpy(sample['flow']).float()
         if 'action' in sample:
             sample['action'] = torch.tensor([sample['action']], dtype=torch.long)
         if 'sequence_index' in sample:

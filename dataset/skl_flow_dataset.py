@@ -22,27 +22,29 @@ class SklFlowDataset(SklOnlyDataset):
         sample['sequence_index'] = seq_idx
         sample['index'] = idx
 
-        sample_flow = deepcopy(sample)
-        sample_flow['keypoints'] = deepcopy(sample['flow'])
+        # sample_flow = deepcopy(sample)
+        # sample_flow['keypoints'] = deepcopy(sample['flow'])
+        sample_pred = deepcopy(sample)
+        sample_pred['keypoints'] = deepcopy(sample['keypoints_pred'])
 
         sample = self.transform(sample)
-        sample_flow = self.transform(sample_flow)
+        sample_pred = self.transform(sample_pred)
+        sample['keypoints_pred'] = sample_pred['keypoints']
 
-        return sample, sample_flow
+        return sample
 
     @staticmethod
     def collate_fn(batch):
         batch_data = {}
-        keys = ['keypoints', 'sequence_index']
-        if 'bone_dirs' in batch[0][0].keys():
+        keys = ['keypoints', 'keypoints_pred', 'flow', 'sequence_index']
+        if 'bone_dirs' in batch[0].keys():
             keys.append('bone_dirs')
-        if 'bone_motions' in batch[0][0].keys():
+        if 'bone_motions' in batch[0].keys():
             keys.append('bone_motions')
-        if 'joint_motions' in batch[0][0].keys():
+        if 'joint_motions' in batch[0].keys():
             keys.append('joint_motions')
         for key in keys:
-            batch_data[key] = torch.stack([sample[0][key] for sample in batch], dim=0)
-        batch_data['flow'] = torch.stack([sample[1]['keypoints'] for sample in batch], dim=0)
+            batch_data[key] = torch.stack([sample[key] for sample in batch], dim=0)
 
         return batch_data
 
