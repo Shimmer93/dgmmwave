@@ -1,4 +1,6 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import sys 
 import os
 
@@ -12,7 +14,7 @@ from .transformer import *
 # from torchvision.models import resnet18
 
 
-class P4Transformer(nn.Module):
+class P4TransformerAnchor(nn.Module):
     def __init__(self, radius, nsamples, spatial_stride,                                # P4DConv: spatial
                  temporal_kernel_size, temporal_stride,                                 # P4DConv: temporal
                  emb_relu,                                                              # embedding: relu
@@ -37,9 +39,34 @@ class P4Transformer(nn.Module):
             nn.Linear(mlp_dim, output_dim),
         )
 
+    def add_anchor_points(self, input):
+        B, L, N, C = input.shape                                                                                                               # [B, L, N, 3]
+        x_min, x_max = -1.5, 1.5
+        y_min, y_max = -1.5, 1.5
+        z_min, z_max = -1.5, 1.5
+        # 4x4x4 points in a cube
+        x = torch.linspace(x_min, x_max, 4)
+        y = torch.linspace(y_min, y_max, 4)
+        z = torch.linspace(z_min, z_max, 4)
+        x, y, z = torch.meshgrid(x, y, z)
+        x = x.reshape(-1, 1)
+        y = y.reshape(-1, 1)
+        z = z.reshape(-1, 1)
+        # concatenate x, y, z
+        anchor_points_ = torch.cat((x, y, z), dim=1).to(device=input.get_device())
+        # anchor_points_ += torch.rand_like(anchor_points_) * 0.01
+        # repeat for batch size
+        anchor_points = anchor_points_.unsqueeze(0).unsqueeze(0).repeat(B, L, 1, 1)
+        # concatenate with input
+        input = torch.cat((input, anchor_points), dim=2)
+
+        return input, anchor_points_
+
+
     def forward(self, input):                                                                                                               # [B, L, N, 3]
         device = input.get_device()
-        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,2:3].clone().permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
+        input, anchor_points = self.add_anchor_points(input[:,:,:,:3])
+        xyzs, features = self.tube_embedding(input, input.clone().permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
         # print('xyzs: ', xyzs.max().item(), xyzs.min().item())
         # print('features: ', features.max().item(), features.min().item())
@@ -68,6 +95,11 @@ class P4Transformer(nn.Module):
 
         output = torch.max(input=output, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
-        output = output.reshape(output.shape[0], 1, output.shape[-1]//3, 3) # B 1 J 3
+        # output = output.reshape(output.shape[0], 1, output.shape[-1]//3, 3) # B 1 J 3
+        output = output.reshape(output.shape[0], 1, output.shape[-1]//64, 64) # B 1 J 3
+        output = F.softmax(output, dim=-1)
+        output = output @ anchor_points # B 1 J 64 @ 64 3 -> B 1 J 3
+
         # print('output after mlp_head: ', output.max().item(), output.min().item())
+
         return output

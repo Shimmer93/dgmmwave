@@ -12,6 +12,7 @@ import pickle
 # import tensorboard
 
 from model.metrics import calulate_error
+from model.chamfer_distance import ChamferDistance
 from loss.mpjpe import mpjpe as mpjpe_mmwave
 from misc.utils import torch2numpy, import_with_str, delete_prefix_from_state_dict
 from misc.skeleton import ITOPSkeleton, JOINT_COLOR_MAP
@@ -23,11 +24,58 @@ def create_model(model_name, model_params):
     model = model_class(**model_params)
     return model
 
+class UnsupLoss(torch.nn.Module):
+    def __init__(self, loss_params):
+        super().__init__()
+        self.model = create_model('P4TransformerMotion', loss_params['model_params'])
+        self.model.load_state_dict(torch.load(loss_params['model_checkpoint'], map_location='cpu')['state_dict'], strict=False)
+        self.model.eval()
+        for param in self.model.parameters():
+            param.requires_grad = False
+        self.chamfer_dist = ChamferDistance()
+
+    def forward(self, x, y_hat0, y_hat1):
+        x_t01 = x[:, -2:, ...]
+        m_hat = self.model(x_t01)
+        x_t0 = x_t01[:, 0:1, :, :3]  # B 1 N 3
+        x_t1 = x_t01[:, 1:2, :, :3]  # B 1 N 3
+        x_t1_hat = x_t0 + m_hat  # B 1 N 3
+        dist1, dist2 = self.chamfer_dist(x_t1_hat[:, 0, :, :3], x_t1[:, 0, :, :3])
+        loss_chamfer = dist1.mean(dim=-1) + dist2.mean(dim=-1)
+        mask_chamfer = (loss_chamfer < 0.1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).detach()
+
+        dists = torch.norm(y_hat0[:, 0].unsqueeze(2) - x_t0[:, 0].
+                           unsqueeze(1), dim=-1) # B J N
+        dists2 = torch.norm(y_hat0[:, 0].unsqueeze(2) - torch.cat([x_t0[:, 0], x_t1[:, 0]], dim=1).
+                           unsqueeze(1), dim=-1) # B J N
+        min_dists, min_indices = torch.min(dists, dim=-1) # B J, B J
+        min_dists2, min_indices2 = torch.min(dists2, dim=-1) # B J, B J
+        mask_dist = (min_dists < 0.05).unsqueeze(1).unsqueeze(-1).detach() # B 1 J 1
+        mask_dist_neg = (min_dists2 > 0.2).unsqueeze(1).unsqueeze(-1).detach() # B 1 J 1
+        min_indices_expanded = min_indices.unsqueeze(-1).expand(-1, -1, y_hat0.shape[-1]) # B J 3
+        nearest_m = m_hat[:, 0].gather(1, min_indices_expanded)
+
+        dist1, dist2 = self.chamfer_dist(x_t0[:, 0].to(torch.float), y_hat0[:, 0].to(torch.float))
+        loss_dist = dist1[dist1 < 0.1].mean()
+
+        # print(f'mask_dist_neg: {mask_dist_neg.sum()}/{mask_dist_neg.numel()}')
+
+        loss_dynamic = F.mse_loss((y_hat1 - y_hat0) * mask_chamfer * mask_dist, nearest_m * mask_chamfer * mask_dist)
+        my_hat_static = (y_hat1 - y_hat0) * mask_dist_neg
+        loss_static = F.mse_loss(my_hat_static, torch.zeros_like(my_hat_static))
+        # loss_dynamic = F.mse_loss((y_hat1 - y_hat0) * mask_chamfer * mask_dist, nearest_m * mask_chamfer * mask_dist)
+        # loss_static = F.mse_loss((y_hat1 - y_hat0) * mask_dist_neg, torch.zeros_like(y_hat0) * mask_dist_neg)
+
+        return loss_dynamic, loss_static, loss_dist
+
 def create_loss(loss_name, loss_params):
     if loss_params is None:
         loss_params = {}
-    loss_class = import_with_str('torch.nn', loss_name)
-    loss = loss_class(**loss_params)
+    if loss_name == 'UnsupLoss':
+        loss = UnsupLoss(loss_params)
+    else:
+        loss_class = import_with_str('torch.nn', loss_name)
+        loss = loss_class(**loss_params)
     return loss
 
 def create_optimizer(optim_name, optim_params, mparams):
@@ -159,13 +207,159 @@ class LitModel(pl.LightningModule):
         plt.clf()
 
     def _calculate_loss(self, batch):
-        x = batch['point_clouds']
-        y = batch['keypoints']
-        if self.hparams.model_name in ['P4Transformer', 'SPiKE']:
-            y_hat = self.model(x)
-            loss = self.loss(y_hat, y)
+        if 'sup' in batch:
+            x = batch['sup']['point_clouds']
+            y = batch['sup']['keypoints']
+        else:
+            x = batch['point_clouds']
+            y = batch['keypoints']
+        if self.hparams.model_name in ['P4Transformer', 'P4TransformerAnchor', 'SPiKE']:
+            if self.hparams.train_dataset['name'] in ['ReferenceDataset'] and self.hparams.ours:
+                batch_sup = batch['sup']
+                batch_unsup = batch['unsup']
+                
+                x_sup0 = batch_sup['point_clouds']
+                x_sup1 = batch_sup['point_clouds_trans']
+                y_sup = batch_sup['keypoints']
+                xr_sup0 = batch_sup['ref_point_clouds']
+                xr_sup1 = batch_sup['ref_point_clouds_trans']
+                yr_sup = batch_sup['ref_keypoints']
+                x_unsup = batch_unsup['point_clouds']
+
+                # print(f'x_sup0: {x_sup0.shape}, xr_sup0: {xr_sup0.shape}')
+
+                x_sup0_t0 = torch.cat((x_sup0[:, :-1, :, :3], xr_sup0[:, :-1, :, :3]), dim=0)
+                x_sup1_t0 = torch.cat((x_sup1[:, :-1, :, :3], xr_sup1[:, :-1, :, :3]), dim=0)
+                x_sup0_t1 = torch.cat((x_sup0[:, 1:, :, :3], xr_sup0[:, 1:, :, :3]), dim=0)
+                x_sup1_t1 = torch.cat((x_sup1[:, 1:, :, :3], xr_sup1[:, 1:, :, :3]), dim=0)
+                y_sup_t0 = torch.cat((y_sup[:, :-1, :, :3], yr_sup[:, :-1, :, :3]), dim=0)
+                y_sup_t1 = torch.cat((y_sup[:, 1:, :, :3], yr_sup[:, 1:, :, :3]), dim=0)
+
+                if torch.rand(1).item() < 0.5:
+                    perm = torch.randperm(x_sup0_t0.shape[-2])
+                    num2exchange = torch.randint(0, x_sup0_t0.shape[-2], (1,)).item()
+                    x_sup0_t0_ = torch.cat((x_sup0_t0[..., perm[:num2exchange], :3], x_sup1_t0[..., perm[num2exchange:], :3]), dim=-2)
+                    x_sup1_t0_ = torch.cat((x_sup1_t0[..., perm[:num2exchange], :3], x_sup0_t0[..., perm[num2exchange:], :3]), dim=-2)
+                    x_sup0_t0 = x_sup0_t0_
+                    x_sup1_t0 = x_sup1_t0_
+
+                if torch.rand(1).item() < 0.5:
+                    perm = torch.randperm(x_sup0_t0.shape[-2])
+                    num2exchange = torch.randint(0, x_sup0_t0.shape[-2], (1,)).item()
+                    x_sup0_t1_ = torch.cat((x_sup0_t1[..., perm[:num2exchange], :3], x_sup1_t1[..., perm[num2exchange:], :3]), dim=-2)
+                    x_sup1_t1_ = torch.cat((x_sup1_t1[..., perm[:num2exchange], :3], x_sup0_t1[..., perm[num2exchange:], :3]), dim=-2)
+                    x_sup0_t1 = x_sup0_t1_
+                    x_sup1_t1 = x_sup1_t1_
+
+                y_sup_t0_hat0 = self.model(x_sup0_t0)
+                y_sup_t1_hat0 = self.model(x_sup0_t1)
+                y_sup_t0_hat1 = self.model(x_sup1_t0)
+                y_sup_t1_hat1 = self.model(x_sup1_t1)
+
+                y_hat = y_sup_t1_hat0[:y_sup_t0.shape[0]//2]
+
+                # with open('aaaaaaaaaaaa.txt', 'a') as f:
+                #     f.write(f'{y_sup_t0}\n')
+
+                loss_sup_t0 = F.mse_loss(y_sup_t0_hat0, y_sup_t0) + F.mse_loss(y_sup_t0_hat1, y_sup_t0.clone())
+                loss_sup_t1 = F.mse_loss(y_sup_t1_hat0, y_sup_t1) + F.mse_loss(y_sup_t1_hat1, y_sup_t1.clone())
+                
+                x_unsup_t0 = x_unsup[:, :-1, ...]
+                x_unsup_t1 = x_unsup[:, 1:, ...]
+
+                y_unsup_t0_hat = self.model(x_unsup_t0)
+                y_unsup_t1_hat = self.model(x_unsup_t1)
+
+                unsup_loss = self.loss.to(self.device)
+                loss_unsup_dynamic, loss_unsup_static, loss_unsup_dist = unsup_loss(x_unsup, y_unsup_t0_hat, y_unsup_t1_hat)
+
+                # if self.current_epoch < 10:
+                #     loss = loss_sup_t0 + loss_sup_t1
+                # else:
+                loss = loss_sup_t0 + loss_sup_t1 + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static + self.hparams.w_dist * loss_unsup_dist
+                losses = {'loss': loss, 'loss_sup': loss_sup_t0 + loss_sup_t1, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static, 'loss_unsup_dist': loss_unsup_dist}
+
+            elif self.hparams.train_dataset['name'] in ['ReferenceDataset']:
+                x_ref = batch['ref_point_clouds']
+                y_ref = batch['ref_keypoints']
+                y_hat = self.model(x)
+                y_ref_hat = self.model(x_ref)
+                loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
+                losses = {'loss': loss}
+            elif self.hparams.train_dataset['name'] in ['ReferenceOneToOneDataset']:
+                x_ref = batch['ref_point_clouds']
+                y_ref = batch['ref_keypoints']
+                if torch.rand(1).item() < 0.5:
+                    perm = torch.randperm(x_ref.shape[-2])
+                    num2exchange = torch.randint(0, x_ref.shape[-2], (1,)).item()
+                    x_ = torch.cat((x[..., perm[:num2exchange], :3], x_ref[..., perm[num2exchange:], :3]), dim=-2)
+                    x_ref_ = torch.cat((x_ref[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
+                    x = x_
+                    x_ref = x_ref_
+                y_hat = self.model(x)
+                y_ref_hat = self.model(x_ref)
+                loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
+                losses = {'loss': loss}
+            else:
+                y_hat = self.model(x)
+                loss = self.loss(y_hat, y)
+                losses = {'loss': loss}
+        elif self.hparams.model_name in ['P4TransformerSimCC']:
+            c_hat, y_hat = self.model(x)
+
+            n = self.model.cube_len
+            bin_width = 3.0 / n
+            x_bin_indices = ((y[..., 0] + 1.5) / bin_width).clamp(0, n-1).floor().to(torch.long)
+            y_bin_indices = (y[..., 1] / bin_width).clamp(0, n-1).floor().to(torch.long)
+            z_bin_indices = ((y[..., 2] + 1.5) / bin_width).clamp(0, n-1).floor().to(torch.long)
+            c = torch.stack([x_bin_indices, y_bin_indices, z_bin_indices], dim=-1).to(torch.long) # B 1 J 3
+            loss = self.loss(c_hat, c)
             losses = {'loss': loss}
-        if self.hparams.model_name in ['P4TransformerFlow']:
+        elif self.hparams.model_name in ['P4TransformerMotion']:
+            batch_sup = batch['sup']
+            batch_unsup = batch['unsup']
+
+            x_sup = batch_sup['point_clouds']
+            y_sup = batch_sup['keypoints']
+            x_unsup = batch_unsup['point_clouds']
+
+            m_sup_hat = self.model(x_sup) # B 1 N 3
+            my_sup = y_sup[:, 1:2, :, :3] - y_sup[:, 0:1, :, :3] # B 1 J 3
+
+            dists = torch.norm(x_sup[:, 0, :, :3].unsqueeze(2) - y_sup[:, 0, :, :3].unsqueeze(1), dim=-1) # B N J
+            bottom_k_dists, bottom_k_indices = torch.topk(dists, k=3, dim=-1, largest=False) # B N k
+            bottom_k_weights = torch.softmax(-bottom_k_dists, dim=-1) # B N k
+            # print(my_sup.shape, bottom_k_indices.shape, bottom_k_weights.shape)
+            B, N, K = bottom_k_indices.shape
+            bottom_k_indices_ = bottom_k_indices.reshape(B, N * K, 1).expand(-1, -1, my_sup.shape[-1]) # B N*k 3
+            nearest_m = my_sup[:, 0].gather(1, bottom_k_indices_).reshape(B, N, K, my_sup.shape[-1]) # B N k 3
+            nearest_m = (nearest_m * bottom_k_weights.unsqueeze(-1)).sum(dim=-2) # B N 3
+
+            min_dists, _ = torch.min(dists, dim=-1) # B N, B N
+            mask_dist = (min_dists < 0.1).unsqueeze(1).unsqueeze(-1) # B 1 N 1
+            # min_indices_expanded = min_indices.unsqueeze(-1).expand(-1, -1, m_sup_hat.shape[-1]) # B N 3
+            # nearest_m = my_sup[:, 0].gather(1, min_indices_expanded).unsqueeze(1) # B N 3
+
+            loss_sup = F.mse_loss(m_sup_hat * mask_dist, nearest_m * mask_dist)
+
+            m_unsup_hat = self.model(x_unsup) # B 1 N 3
+            x0_unsup = x_unsup[:, 0:1, :, :3] # B 1 N 3
+            x1_unsup = x_unsup[:, 1:2, :, :3] # B 1 N 3
+            x1_unsup_hat = x0_unsup + m_unsup_hat # B 1 N 3
+
+            y_hat = y_sup
+
+            chamfer_dist = ChamferDistance()
+            dist1, dist2 = chamfer_dist(x1_unsup_hat[:, 0, :, :3], x1_unsup[:, 0, :, :3])
+            loss_chamfer = dist1.mean() + dist2.mean()
+
+            loss_reg = torch.norm(m_unsup_hat, dim=-1).mean()
+
+            loss = loss_sup + self.hparams.w_chamfer * loss_chamfer + self.hparams.w_reg * loss_reg
+            
+            losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_chamfer': loss_chamfer, 'loss_reg': loss_reg}
+
+        elif self.hparams.model_name in ['P4TransformerFlow']:
             # B, T, J, C = y.shape
             y0 = y[:, 0:1, ...]
             loc0 = y0[:, :, 8:9, :]
@@ -221,106 +415,22 @@ class LitModel(pl.LightningModule):
             loss = self.hparams.w_loc * l_loc + self.hparams.w_flow * l_flow + self.hparams.w_rec * (l_rec_lidar + l_rec_mmwave) + self.hparams.w_conf * l_conf
             losses = {'loss': loss, 'l_flow': l_flow, 'l_loc': l_loc, 'l_rec_lidar': l_rec_lidar, 'l_rec_mmwave': l_rec_mmwave, 'l_conf': l_conf}
 
-        elif self.hparams.model_name in ['P4TransformerDA8', 'P4TransformerDA9']:
+        elif self.hparams.model_name in ['P4TransformerDG', 'P4TransformerDG2']:
             x_ref = batch['ref_point_clouds']
-            y_hat, y_hat_ref, y_hat2, y_hat_ref2, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
+            if torch.rand(1).item() < 0.5:
+                perm = torch.randperm(x_ref.shape[-2])
+                num2exchange = torch.randint(0, x_ref.shape[-2], (1,)).item()
+                x_ = torch.cat((x[..., perm[:num2exchange], :3], x_ref[..., perm[num2exchange:], :3]), dim=-2)
+                x_ref_ = torch.cat((x_ref[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
+                x = x_
+                x_ref = x_ref_
+                # print(x.shape, x_ref.shape)
+            y_ref = batch['ref_keypoints']
+            y_hat, y_hat_ref, l_rec = self.model((x, x_ref))
             l_pc = self.loss(y_hat, y)
-            l_pc2 = self.loss(y_hat2, y.clone())
-            # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
-            # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
-            loss = l_pc + l_pc2 + self.hparams.w_rec * (l_rec + l_rec_ref) + self.hparams.w_mem * l_mem # + w_con * l_con
-            losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
-        elif self.hparams.model_name in ['P4TransformerDA10']:
-            x_ref = batch['ref_point_clouds']
-            y_hat, y_hat2, l_prec, l_prec_ref, l_rec, l_rec_ref, l_mem = self.model((x, x_ref), mode='train')
-            l_pc = self.loss(y_hat, y)
-            l_pc2 = self.loss(y_hat2, y.clone())
-            # l_con = self.losses['pc'](y_hat_ref, y_hat_ref2)
-            # w_con = self.hparams.w_con if self.current_epoch > 40 else 0
-            loss = l_pc + l_pc2 + self.hparams.w_rec * (l_rec + l_rec_ref) + self.hparams.w_mem * l_mem # + w_con * l_con
-            losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_prec': l_prec, 'l_prec_ref': l_prec_ref, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_mem': l_mem}
-        elif self.hparams.model_name in ['P4TransformerDA11']:
-            x_ref = batch['ref_point_clouds']
-            y_hat, y_hat2, l_conf, l_rec, l_rec_ref, l_mem, l_prec, l_prec_ref = self.model((x, x_ref), mode='train')
-            l_pc = self.loss(y_hat, y)
-            l_pc2 = self.loss(y_hat2, y.clone())
-            loss = l_pc + l_pc2 + self.hparams.w_conf * l_conf + self.hparams.w_rec * (l_rec_ref) + \
-                self.hparams.w_prec * (l_prec + l_prec_ref) # + self.hparams.w_dist * l_dist # + self.hparams.w_prec * l_prec  # + w_con * l_con self.hparams.w_mem * l_mem + 
-            losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_conf': l_conf, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 
-                        'l_prec': l_prec, 'l_prec_ref': l_prec_ref}
-        elif self.hparams.model_name in ['LMA_P4T']:
-            x_ref = batch['ref_point_clouds']
-            # vis_lidar, vis_transferred, \
-            y_hat, y_hat2, y_ref_hat, l_rec_lidar, l_rec_mmwave, l_conf, vis_lidar, vis_transferred = self.model((x, x_ref), mode='train')
-            l_pc = self.loss(y_hat, y) + self.loss(y_hat2, y)
-
-            # l_tcon = F.mse_loss(y_mmwave0, y_mmwave1, reduction='none').mean(dim=-1)
-            # l_tcon = torch.min(l_tcon, dim=-1)[0]
-            # l_tcon[l_tcon < 0.01] = 0
-            # l_tcon = l_tcon.mean()
-
-            vis_gt = torch.zeros_like(vis_lidar, dtype=torch.float32)
-            for i in range(len(vis_gt)):
-                for j in range(len(vis_gt[i])):
-                    vis_gt[i][j][0] = torch.any(x[i, -1, :, -1] == j+1)
-            l_vis = F.binary_cross_entropy_with_logits(vis_lidar, vis_gt) + \
-                    F.binary_cross_entropy_with_logits(vis_transferred, vis_gt)
-            
-            loss = l_pc + self.hparams.w_rec * (l_rec_lidar + l_rec_mmwave) + self.hparams.w_conf * l_conf + self.hparams.w_vis * l_vis
-
-            losses = {'loss': loss, 'l_pc': l_pc, 'l_rec_mmwave': l_rec_mmwave, 'l_rec_lidar': l_rec_lidar, 'l_conf': l_conf, 'l_vis': l_vis}
-
-            # if self.hparams.use_aux:
-            #     y_ref_hat = y_ref_hat.squeeze(1)
-            #     bds = []
-            #     for b in ITOPSkeleton.bones:
-            #         bd = y_ref_hat[:, b[1]].clone() - y_ref_hat[:, b[0]].clone()
-            #         bd = bd / torch.linalg.norm(bd, axis=-1, keepdims=True)
-            #         bds.append(bd)
-            #     bds = torch.stack(bds, axis=1)
-            #     pl_dir = self.reg_dir(bds)
-            #     l_pl_dir = F.mse_loss(pl_dir, torch.zeros_like(pl_dir))
-
-            #     # y_ref_hat0, y_ref_hat1 = torch.chunk(y_ref_hat.clone(), 2, dim=0)
-            #     # bms = []
-            #     # for b in ITOPSkeleton.bones:
-            #     #     bm = y_ref_hat1[:, b[1]].clone() - y_ref_hat0[:, b[0]].clone()
-            #     #     bms.append(bm)
-            #     # bms = torch.stack(bms, axis=1)
-            #     # pl_motion = self.reg_motion(bms)
-            #     # l_pl_motion = F.mse_loss(pl_motion, torch.zeros_like(pl_motion))
-
-            #     loss += self.hparams.w_pl_dir * l_pl_dir # + self.hparams.w_pl_motion * l_pl_motion
-            #     # loss += self.hparams.w_pl_motion * l_pl_motion
-            #     losses['l_pl_dir'] = l_pl_dir
-            #     # losses['l_pl_motion'] = l_pl_motion
-            
-        elif self.hparams.model_name in ['LMA2_P4T']:
-            x_ref = batch['ref_point_clouds']
-            y_hat, y_hat2, l_rec = self.model((x, x_ref), mode='train')
-            l_pc = self.loss(y_hat, y) + self.loss(y_hat2, y)
-            loss = l_pc + self.hparams.w_rec * l_rec
-            losses = {'loss': loss, 'l_pc': l_pc, 'l_rec': l_rec}
-
-        elif self.hparams.model_name in ['LMA3_P4T']:
-            x_ref = batch['ref_point_clouds']
-            y_loc = y[:, :, 8:9]
-            y_pose = y - y_loc
-            y_pose_hat, y_loc_hat, vis_lidar, l_rec, l_rec_ref, l_ortho = self.model((x, x_ref), mode='train')
-
-            vis_gt = torch.zeros_like(vis_lidar, dtype=torch.float32)
-            for i in range(len(vis_gt)):
-                for j in range(len(vis_gt[i])):
-                    vis_gt[i][j][0] = torch.any(x[i, -1, :, -1] == j+1)
-            l_vis = F.binary_cross_entropy_with_logits(vis_lidar, vis_gt)
-
-            y_hat = y_pose_hat + y_loc_hat
-            l_pose = self.loss(y_pose_hat, y_pose)
-            l_loc = self.loss(y_loc_hat, y_loc)
-            loss = l_pose + self.hparams.w_loc * l_loc + self.hparams.w_ortho * l_ortho + \
-                    self.hparams.w_vis * l_vis
-                #    self.hparams.w_rec * (l_rec + l_rec_ref) + 
-            losses = {'loss': loss, 'l_pose': l_pose, 'l_loc': l_loc, 'l_rec': l_rec, 'l_rec_ref': l_rec_ref, 'l_ortho': l_ortho, 'l_vis': l_vis}
+            l_pc2 = self.loss(y_hat_ref, y_ref)
+            loss = l_pc + l_pc2 + self.hparams.w_rec * l_rec #+ self.hparams.w_mem * l_mem # + w_con * l_con
+            losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_rec': l_rec}
             
         elif self.hparams.model_name == 'PoseTransformer':
             #TODO: Implement the loss function of posetran
@@ -355,19 +465,27 @@ class LitModel(pl.LightningModule):
         elif self.hparams.model_name in ['P4TransformerFlowDA']:
             flow_hat, loc_hat = self.model(x[:, :-1, ...])
             return x, y, y, loc_hat, flow_hat
+        elif self.hparams.model_name in ['P4TransformerMotion']:
+            m_hat = self.model(x)
+            return x, y, y, m_hat
         else:
             y_hat = self.model(x)
             return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
-        c = batch['centroid']
-        r = batch['radius']
+        if 'sup' in batch:
+            c = batch['sup']['centroid']
+            r = batch['sup']['radius']
+        else:
+            c = batch['centroid']
+            r = batch['radius']
 
         losses, x, y, y_hat = self._calculate_loss(batch)
 
         if y_hat is None:
             log_dict = {}
         else:
+            # print(f"y_hat shape: {y_hat.shape}, y shape: {y.shape}, c shape: {c.shape}, r shape: {r.shape}")
             y = self._recover_skeleton(y, c, r)
             y_hat = self._recover_skeleton(y_hat, c, r)
             mpjpe, pampjpe = calulate_error(y_hat, y)
@@ -408,6 +526,22 @@ class LitModel(pl.LightningModule):
             l_loc = F.mse_loss(loc_hat, loc)
             l_flow = F.mse_loss(flow_hat, flow)
 
+        elif self.hparams.model_name in ['P4TransformerMotion']:
+            x, y, y_hat_, m_hat = self._evaluate(batch)
+
+            x0 = x[:, 0:1, :, :3] # B 1 N 3
+            x1 = x[:, 1:2, :, :3] # B 1 N 3
+            x1_hat = x0 + m_hat # B 1 N 3
+            y_hat = y
+            
+            chamfer_dist = ChamferDistance()
+            dist1, dist2 = chamfer_dist(x1_hat[:, 0, :, :3], x1[:, 0, :, :3])
+            loss_chamfer = dist1.mean() + dist2.mean()
+
+            loss_reg = torch.norm(m_hat, dim=-1).mean()
+
+            loss = loss_chamfer + self.hparams.w_reg * loss_reg
+
         else:
             x, y, y_hat_ = self._evaluate(batch)
             y = y[:, -1:, ...]
@@ -424,6 +558,8 @@ class LitModel(pl.LightningModule):
         elif self.hparams.model_name in ['P4TransformerFlowDA']:
             log_dict['val_l_loc'] = l_loc
             log_dict['val_l_flow'] = l_flow
+        elif self.hparams.model_name in ['P4TransformerMotion']:
+            log_dict['val_loss'] = loss
         self.log_dict(log_dict, sync_dist=True)
 
         if batch_idx == 0:
@@ -457,6 +593,22 @@ class LitModel(pl.LightningModule):
 
             l_loc = F.mse_loss(loc_hat, loc)
             l_flow = F.mse_loss(flow_hat, flow)
+
+        elif self.hparams.model_name in ['P4TransformerMotion']:
+            x, y, y_hat_, m_hat = self._evaluate(batch)
+
+            x0 = x[:, 0:1, :, :3] # B 1 N 3
+            x1 = x[:, 1:2, :, :3] # B 1 N 3
+            x1_hat = x0 + m_hat # B 1 N 3
+            y_hat = y
+
+            chamfer_dist = ChamferDistance()
+            dist1, dist2 = chamfer_dist(x1_hat[:, 0, :, :3], x1[:, 0, :, :3])
+            loss_chamfer = dist1.mean() + dist2.mean()
+
+            loss_reg = torch.norm(m_hat, dim=-1).mean()
+
+            loss = loss_chamfer + self.hparams.w_reg * loss_reg
 
         else:
             x, y, y_hat_ = self._evaluate(batch)
@@ -504,6 +656,8 @@ class LitModel(pl.LightningModule):
         if hasattr(self.hparams, 'use_aux') and self.hparams.use_aux:
             log_dict['test_pl_dir'] = l_pl_dir
             log_dict['test_pl_motion'] = l_pl_motion
+        if self.hparams.model_name in ['P4TransformerMotion']:
+            log_dict['val_loss'] = loss
         self.log_dict(log_dict, sync_dist=True)
         if batch_idx == 0:
             self._vis_pred_gt_keypoints(x, y, y_hat)

@@ -21,8 +21,8 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: *data_path
-    split: test_rdn_p3
+    data_path: data/mmbody.pkl
+    split: test #_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -75,7 +75,7 @@ train_pipeline:
       clip_len: 7
   - name: GetCentroid
     params: 
-      centroid_type: 'dataset_median'
+      centroid_type: 'zonly'
   - name: Normalize
     params:
       feat_scale: null
@@ -100,16 +100,6 @@ train_pipeline:
       max_num2add: 3
       num_added: 32
     prob: 0.5
-  - name: GenerateSegmentationGroundTruth
-    params: null
-  - name: DropPointsAtSegmentedJoints
-    params:
-      max_num2drop: 6
-    prob: 0.5
-  - name: RandomJitter
-    params:
-      jitter_std: 0.001
-    prob: 0.5
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -117,8 +107,9 @@ train_pipeline:
     prob: 0.5
   - name: RandomRotate
     params:
-      angle_min: -0.3141592653589793
-      angle_max: 0.3141592653589793
+      deg: true
+      angle_min: -10
+      angle_max: 10
     prob: 0.5
   - name: RandomTranslate
     params:
@@ -127,20 +118,27 @@ train_pipeline:
   - name: ReduceKeypointLen
     params:
       only_one: true
-      keep_type: 'middle'
+      keep_type: 'end'
       frame_to_reduce: 0
   - name: Pad
     params:
-      max_len: 1024
+      max_len: 256
+  - name: RandomJitter
+    params:
+      jitter_std: 0.05
+    prob: 0.5
   - name: ToTensor
     params: null
-val_pipeline: &val_pipeline
+val_pipeline:
   - name: UniformSample
     params: 
       clip_len: 7
   - name: GetCentroid
     params: 
-      centroid_type: 'dataset_median'
+      centroid_type: 'zonly'
+  - name: Normalize
+    params:
+      feat_scale: null
   - name: ToITOP
     params: null
   - name: MultiFrameAggregate
@@ -149,18 +147,43 @@ val_pipeline: &val_pipeline
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
-      radius: 2.0
-  - name: Normalize
-    params:
-      feat_scale: null
+      radius: 1.5
   - name: ReduceKeypointLen
     params:
       only_one: true
-      keep_type: 'middle'
+      keep_type: 'end'
       frame_to_reduce: 0
   - name: Pad
     params:
-      max_len: 1024
+      max_len: 256
   - name: ToTensor
     params: null
-test_pipeline: *val_pipeline
+test_pipeline:
+  - name: UniformSample
+    params: 
+      clip_len: 7
+  - name: GetCentroid
+    params: 
+      centroid_type: 'zonly'
+  - name: Normalize
+    params:
+      feat_scale: null
+  - name: ToITOP
+    params: null
+  - name: MultiFrameAggregate
+    params:
+      num_frames: 3
+  - name: RemoveOutliers
+    params: 
+      outlier_type: 'box'
+      radius: 1.5
+  - name: ReduceKeypointLen
+    params:
+      only_one: true
+      keep_type: 'end'
+      frame_to_reduce: 0
+  - name: Pad
+    params:
+      max_len: 256
+  - name: ToTensor
+    params: null

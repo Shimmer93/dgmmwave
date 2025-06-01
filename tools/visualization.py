@@ -28,7 +28,7 @@ def load_results(path):
     kps_pred = []
     seq_idxs = []
     for i, seq in enumerate(results):
-        pcs.append(seq['flow'][..., [0, 2, 1]])
+        pcs.append(seq['input'][..., [0, 2, 1]])
         kps_gt.append(seq['keypoints'][..., [0, 2, 1]])
         kps_gt[-1] = kps_gt[-1] - kps_gt[-1][:, 8:9, :]
         kps_pred.append(seq['keypoints_pred'][..., [0, 2, 1]])

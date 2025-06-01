@@ -1,7 +1,8 @@
 import pytorch_lightning as pl
+from pytorch_lightning.trainer.supporters import CombinedLoader
 from torch.utils.data import DataLoader
 
-from dataset.transforms import RandomApply, ComposeTransform
+from dataset.transforms import RandomApply, ComposeTransform, MultipleKeyAggregate
 from misc.utils import import_with_str
 
 class PipelineTransform(ComposeTransform):
@@ -13,10 +14,12 @@ class PipelineTransform(ComposeTransform):
             tsfms_params = tsfm['params']
             if tsfms_params is None:
                 tsfms_params = {}
+            tsfm_ = tsfm_class(**tsfms_params)
             if 'prob' in tsfm:
-                tsfms.append(RandomApply([tsfm_class(**tsfms_params)], prob=tsfm['prob']))
-            else:
-                tsfms.append(tsfm_class(**tsfms_params))
+                tsfm_ = RandomApply([tsfm_], prob=tsfm['prob'])
+            if 'ori_key' in tsfm:
+                tsfm_ = MultipleKeyAggregate([tsfm_], tsfm['ori_key'], tsfm['more_keys'])
+            tsfms.append(tsfm_)
 
         super().__init__(tsfms)
 
@@ -39,7 +42,7 @@ def create_ref_dataset(dataset_name, dataset_params, pipeline, ref_pipeline):
     collate_fn = dataset_class.collate_fn
     return dataset, collate_fn
 
-class LitDataModule(pl.LightningDataModule):
+class OurDataModule(pl.LightningDataModule):
 
     def __init__(self, hparams):
         super().__init__()
@@ -51,6 +54,7 @@ class LitDataModule(pl.LightningDataModule):
                 self.train_dataset, self.train_collate_fn = create_ref_dataset(self.hparams.train_dataset['name'], self.hparams.train_dataset['params'], self.hparams.train_pipeline, self.hparams.ref_pipeline)
             else:
                 self.train_dataset, self.train_collate_fn = create_dataset(self.hparams.train_dataset['name'], self.hparams.train_dataset['params'], self.hparams.train_pipeline)
+            self.unsup_dataset, self.unsup_collate_fn = create_dataset(self.hparams.unsup_dataset['name'], self.hparams.unsup_dataset['params'], self.hparams.unsup_pipeline)
             self.val_dataset, self.val_collate_fn = create_dataset(self.hparams.val_dataset['name'], self.hparams.val_dataset['params'], self.hparams.val_pipeline)
         elif stage == 'test':
             self.test_dataset, self.test_collate_fn = create_dataset(self.hparams.test_dataset['name'], self.hparams.test_dataset['params'], self.hparams.test_pipeline)
@@ -60,7 +64,7 @@ class LitDataModule(pl.LightningDataModule):
             raise ValueError(f'Unknown stage: {stage}')
 
     def train_dataloader(self):
-        return DataLoader(
+        sup_loader = DataLoader(
             self.train_dataset,
             batch_size=self.hparams.batch_size,
             shuffle=True,
@@ -69,6 +73,17 @@ class LitDataModule(pl.LightningDataModule):
             pin_memory=self.hparams.pin_memory,
             drop_last=True
         )
+        unsup_loader = DataLoader(
+            self.unsup_dataset,
+            batch_size=self.hparams.batch_size,
+            shuffle=True,
+            num_workers=self.hparams.num_workers,
+            collate_fn=self.unsup_collate_fn,
+            pin_memory=self.hparams.pin_memory,
+            drop_last=True
+        )
+
+        return CombinedLoader({'sup': sup_loader, 'unsup': unsup_loader}, mode='max_size_cycle')
     
     def val_dataloader(self):
         return DataLoader(

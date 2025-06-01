@@ -11,18 +11,24 @@ epochs: &epochs 100
 train_dataset:
   name: TemporalDataset
   params:
-    data_path: &data_path /scratch/PI/cqf/pc_data/pkls/hmpear_mm_mmbody2.pkl
-    split: [train, val]
+    data_path: &data_path /scratch/PI/cqf/pc_data/pkls/mmfi.pkl
+    split: [train_rdn_p3, val_rdn_p3]
+    ratio: 0.1
+unsup_dataset:
+  name: TemporalDataset
+  params:
+    data_path: *data_path
+    split: [train_rdn_p3, val_rdn_p3]
 val_dataset:
   name: TemporalDataset
   params:
     data_path: *data_path
-    split: test
+    split: test_rdn_p3
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: /scratch/PI/cqf/pc_data/pkls/mmbody.pkl
-    split: test
+    data_path: /scratch/PI/cqf/pc_data/pkls/mmfi.pkl
+    split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -43,7 +49,7 @@ sched_params:
 # Model parameters
 # --------------------------------------
 mode: train
-model_name: P4Transformer
+model_name: P4TransformerMotion
 model_params:
   radius: 0.7
   nsamples: 32
@@ -56,7 +62,7 @@ model_params:
   heads: 8
   dim_head: 128
   mlp_dim: 2048
-  output_dim: 45
+  output_dim: 3
   features: 1
 # --------------------------------------
 # Loss parameters
@@ -64,16 +70,16 @@ model_params:
 loss_name: MSELoss
 loss_params: null
 # weight for auxiliary losses
-w_rec: 0.001
-w_mem: 0.001
+w_reg: 0.1
+w_chamfer: 1.0
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
-train_pipeline:
+train_pipeline: &train_pipeline
   - name: UniformSample
     params: 
       pad_type: 'start'
-      clip_len: 5
+      clip_len: 2
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
@@ -118,11 +124,6 @@ train_pipeline:
     params:
       translate_range: 0.01
     prob: 0.5
-  - name: ReduceKeypointLen
-    params:
-      only_one: true
-      keep_type: 'end'
-      frame_to_reduce: 0
   - name: Pad
     params:
       max_len: 256
@@ -136,7 +137,7 @@ val_pipeline: &val_pipeline
   - name: UniformSample
     params:
       pad_type: 'start'
-      clip_len: 5
+      clip_len: 2
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
@@ -154,11 +155,6 @@ val_pipeline: &val_pipeline
       add_std: 0.2
       num_added: 8
       zero_centered: false
-  - name: ReduceKeypointLen
-    params:
-      only_one: true
-      keep_type: 'end'
-      frame_to_reduce: 0
   - name: Pad
     params:
       max_len: 256
@@ -168,7 +164,7 @@ test_pipeline:
   - name: UniformSample
     params:
       pad_type: 'start'
-      clip_len: 5
+      clip_len: 2
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
@@ -184,13 +180,9 @@ test_pipeline:
     params: 
       outlier_type: 'box'
       radius: 1.5
-  - name: ReduceKeypointLen
-    params:
-      only_one: true
-      keep_type: 'end'
-      frame_to_reduce: 0
   - name: Pad
     params:
       max_len: 256
   - name: ToTensor
     params: null
+unsup_pipeline: *train_pipeline

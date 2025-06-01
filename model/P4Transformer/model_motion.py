@@ -1,6 +1,7 @@
 import torch
 import sys 
 import os
+import torch.nn.functional as F
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(BASE_DIR)
@@ -12,7 +13,7 @@ from .transformer import *
 # from torchvision.models import resnet18
 
 
-class P4Transformer(nn.Module):
+class P4TransformerMotion(nn.Module):
     def __init__(self, radius, nsamples, spatial_stride,                                # P4DConv: spatial
                  temporal_kernel_size, temporal_stride,                                 # P4DConv: temporal
                  emb_relu,                                                              # embedding: relu
@@ -30,6 +31,8 @@ class P4Transformer(nn.Module):
 
         self.transformer = Transformer(dim, depth, heads, dim_head, mlp_dim)
 
+        self.deconv = P4DTransConv(in_planes=dim, mlp_planes=[dim], mlp_activation=[True], mlp_batch_norm=[True], original_planes=features)
+
         self.mlp_head = nn.Sequential(
             nn.LayerNorm(dim),
             nn.Linear(dim, mlp_dim),
@@ -37,15 +40,16 @@ class P4Transformer(nn.Module):
             nn.Linear(mlp_dim, output_dim),
         )
 
-    def forward(self, input):                                                                                                               # [B, L, N, 3]
+    def forward(self, input):
+        B, L, N, C = input.shape                                                                                                               # [B, L, N, 3]
         device = input.get_device()
-        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,2:3].clone().permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
+        xyzs0, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,2:3].clone().permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
         # print('xyzs: ', xyzs.max().item(), xyzs.min().item())
         # print('features: ', features.max().item(), features.min().item())
 
         xyzts = []
-        xyzs = torch.split(tensor=xyzs, split_size_or_sections=1, dim=1)
+        xyzs = torch.split(tensor=xyzs0, split_size_or_sections=1, dim=1)
         xyzs = [torch.squeeze(input=xyz, dim=1).contiguous() for xyz in xyzs]
         for t, xyz in enumerate(xyzs):
             t = torch.ones((xyz.size()[0], xyz.size()[1], 1), dtype=torch.float32, device=device) * (t+1)
@@ -64,10 +68,16 @@ class P4Transformer(nn.Module):
             embedding = self.emb_relu(embedding)
 
         output = self.transformer(embedding)
+        output = torch.reshape(input=output, shape=(B, L, -1, output.shape[2])) # B L n D
+        output = output.permute(0, 1, 3, 2) # B L D n
         # print('output after transformer: ', output.max().item(), output.min().item())
 
-        output = torch.max(input=output, dim=1, keepdim=False, out=None)[0]
+        xyzs, output = self.deconv(xyzs0, input[:,:,:,:3], output.float(), input[:,:,:,2:3].clone().permute(0,1,3,2)) # B L D n
+
+        output = output[:, -1, :, :].permute(0, 2, 1) # B N D
+
+        # output = torch.max(input=output, dim=1, keepdim=False, out=None)[0]
         output = self.mlp_head(output)
-        output = output.reshape(output.shape[0], 1, output.shape[-1]//3, 3) # B 1 J 3
+        output = output.unsqueeze(1) # B 1 N 3
         # print('output after mlp_head: ', output.max().item(), output.min().item())
         return output

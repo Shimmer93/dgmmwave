@@ -12,6 +12,7 @@ from pytorch_lightning.loggers import TensorBoardLogger #WandbLogger,
 from pytorch_lightning.strategies.ddp import DDPStrategy
 
 from dataset.data_api import LitDataModule
+from dataset.data_ours_api import OurDataModule
 from model.model_api import LitModel
 from model.model_aux_api import AuxLitModel
 from model.model_f2p_api import F2PLitModel
@@ -19,7 +20,10 @@ from model.model_f2p_api import F2PLitModel
 from misc.utils import load_cfg, merge_args_cfg
 
 def main(args):
-    dm = LitDataModule(hparams=args)
+    if args.ours:
+        dm = OurDataModule(hparams=args)
+    else:
+        dm = LitDataModule(hparams=args)
     # if args.mean_teacher:
     #     model = MeanTeacherLitModel(hparams=args)
     # else:
@@ -36,6 +40,9 @@ def main(args):
         if args.model_name in ['P4TransformerFlow', 'P4TransformerFlowDA']:
             monitor = 'val_l_flow'
             filename = args.model_name+'-{epoch}-{val_l_flow:.4f}'
+        elif args.model_name in ['P4TransformerMotion']:
+            monitor = 'val_loss'
+            filename = args.model_name+'-{epoch}-{val_loss:.4f}'
         else:
             monitor = 'val_mpjpe'
             filename = args.model_name+'-{epoch}-{val_mpjpe:.4f}'
@@ -132,6 +139,7 @@ if __name__ == "__main__":
     parser.add_argument('--mean_teacher', action='store_true')
     parser.add_argument('--aux', action='store_true')
     parser.add_argument('--f2p', action='store_true')
+    parser.add_argument('--ours', action='store_true')
 
     args = parser.parse_args()
     cfg = load_cfg(args.cfg)

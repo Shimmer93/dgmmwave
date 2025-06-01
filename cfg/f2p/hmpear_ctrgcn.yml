@@ -11,7 +11,7 @@ epochs: &epochs 100
 train_dataset:
   name: SklFlowDataset
   params:
-    data_path: &data_path data/lidarhuman26m_flow_da/lidarhuman26m.pkl
+    data_path: &data_path data/hmpear_flow/hmpear.pkl
     split: [train, val]
 val_dataset:
   name: SklFlowDataset
@@ -21,7 +21,7 @@ val_dataset:
 test_dataset:
   name: SklFlowDataset
   params:
-    data_path: data/lidarhuman26m_flow_da/mmfi.pkl
+    data_path: data/hmpear_flow/mmfi.pkl
     split: test
 # --------------------------------------
 # Optimizer parameters

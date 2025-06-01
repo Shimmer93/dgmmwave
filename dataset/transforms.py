@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from copy import deepcopy
 from sklearn.neighbors import NearestNeighbors
 from sklearn.cluster import DBSCAN, OPTICS, HDBSCAN
 from miniball import get_bounding_ball
@@ -69,6 +70,7 @@ class AddNoisyPoints():
                 noise_center = np.random.uniform(-1, 1, sample['point_clouds'][i].shape[1])
                 noise = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][i].shape[1])) + noise_center
             sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i], noise], axis=0)
+        
         return sample
 
 class GenerateSegmentationGroundTruth():
@@ -79,12 +81,15 @@ class GenerateSegmentationGroundTruth():
         if 'keypoints' not in sample:
             sample['segmented'] = False
             return sample
-        
+
         for i in range(len(sample['keypoints'])):
             # mask = np.zeros(sample['point_clouds'][i].shape[0], dtype=np.bool)
             # for bone in ITOPSkeleton.bones:
             #     mask |= self._mask_single_bone(sample['point_clouds'][i][...,:3], sample['keypoints'][i], bone, self.padding)
             # sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i], mask[...,np.newaxis].astype(sample['point_clouds'][i].dtype)], axis=-1)
+            # if len(sample['keypoints'][i]) == 0:
+            #     sample['point_clouds'][i] = np.zeros((1, 3), dtype=sample['keypoints'][i].dtype)
+            
             neighbors = NearestNeighbors(radius=self.padding).fit(sample['keypoints'][i])
             indices = neighbors.radius_neighbors(sample['point_clouds'][i][...,:3], return_distance=False)
             sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i], np.array([len(idx) > 0 for idx in indices], dtype=np.float32)[...,np.newaxis]], axis=-1)
@@ -297,7 +302,7 @@ class RemoveOutliers():
                 clusterer = HDBSCAN(min_cluster_size=self.min_neighbors)
                 inliers = clusterer.fit_predict(sample['point_clouds'][i][...,:3]) != -1
             elif self.outlier_type == 'box':
-                inliers = np.where(np.all(np.abs(sample['point_clouds'][i][...,:2]) < self.radius, axis=1))
+                inliers = np.where(np.all(np.abs(sample['point_clouds'][i][...,:2]-np.array([[0,1]])) < self.radius, axis=1))
             else:
                 raise ValueError('You should never reach here!')
             if len(inliers[0]) == 0:
@@ -387,6 +392,7 @@ class UniformSample():
         if 'flow' in sample:
             sample['flow'] = sample['flow'][start_idx:start_idx+self.clip_len]
         # print('uniform sample', len(sample['point_clouds']), len(sample['keypoints']))
+
         return sample
     
 class MultiFrameAggregate():
@@ -483,7 +489,7 @@ class RandomDrop():
 class GetCentroid():
     def __init__(self, centroid_type='minball'):
         self.centroid_type = centroid_type
-        if centroid_type not in ['none', 'zonly', 'mean', 'median', 'minball', 'dataset_median']:
+        if centroid_type not in ['none', 'zonly', 'mean', 'median', 'minball', 'dataset_median', 'kps']:
             raise ValueError('centroid_type must be "mean" or "minball"')
         
     def __call__(self, sample):
@@ -519,9 +525,13 @@ class GetCentroid():
                 centroid = np.array([-0.05297852, -1.19726562, 0.08111572])
             else:
                 raise NotImplementedError
+        elif self.centroid_type == 'kps':
+            kps_cat = np.concatenate(sample['keypoints'], axis=0)
+            centroid = np.array([np.median(kps_cat[:, 0]), np.min(kps_cat[:, 1]), np.median(kps_cat[:, 2])])
         else:
             raise ValueError('You should never reach here! centroid_type must be "mean" or "minball"')
         sample['centroid'] = centroid
+
         return sample
 
 class Normalize():
@@ -628,11 +638,12 @@ class ToTensor():
         return sample
 
 class ReduceKeypointLen():
-    def __init__(self, only_one=False, keep_type='middle', frame_to_reduce=1):
+    def __init__(self, only_one=False, keep_type='middle', frame_to_reduce=1, indexs_to_keep=None):
         self.only_one = only_one
         assert keep_type in ['middle', 'start', 'end'], 'keep_type must be "middle", "start" or "end"'
         self.keep_type = keep_type
         self.frame_to_reduce = frame_to_reduce
+        self.indexs_to_keep = indexs_to_keep
 
     def __call__(self, sample):
         if self.only_one:
@@ -644,10 +655,29 @@ class ReduceKeypointLen():
             else:
                 keep_idx = num_frames - 1
             sample['keypoints'] = sample['keypoints'][keep_idx:keep_idx+1]
+        elif self.indexs_to_keep is not None:
+            sample['keypoints'] = sample['keypoints'][self.indexs_to_keep]
         else:
             sample['keypoints'] = sample['keypoints'][self.frame_to_reduce:-self.frame_to_reduce]
         return sample
 
+class MultipleKeyAggregate():
+    def __init__(self, transforms, ori_key, more_keys):
+        self.transforms = transforms
+        self.ori_key = ori_key
+        self.more_keys = more_keys
+
+    def __call__(self, sample):
+        np.random.seed(42)
+        for t in self.transforms:
+            for another_key in self.more_keys:
+                another_sample = deepcopy(sample)
+                another_sample[self.ori_key] = another_sample[another_key]
+                another_sample = t(another_sample)
+                sample[another_key] = another_sample[self.ori_key]
+            sample = t(sample)
+        np.random.seed(None)
+        return sample
 
 class RandomApply():
     def __init__(self, transforms, prob):

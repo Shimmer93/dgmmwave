@@ -6,7 +6,7 @@ from copy import deepcopy
 from itertools import chain
 
 class TemporalDataset(Dataset):
-    def __init__(self, data_path, transform=None, split='train'):
+    def __init__(self, data_path, transform=None, split='train', ratio=1):
         self.data_path = data_path
         self.transform = transform
 
@@ -18,6 +18,8 @@ class TemporalDataset(Dataset):
         elif isinstance(split, list):
             self.split = [self.all_data['splits'][s] for s in split]
             self.split = list(chain(*self.split))
+
+        self.split = self.split[:int(len(self.split) * ratio)]
         
         self.data = [self.all_data['sequences'][i] for i in self.split]
         self.seq_lens = [len(seq['keypoints']) for seq in self.data]

@@ -7,8 +7,8 @@ from itertools import chain
 
 from dataset.temporal_dataset import TemporalDataset
 
-class ReferenceDataset(TemporalDataset):
-    def __init__(self, data_path, ref_data_path, transform=None, ref_transform=None, split='train', ref_split='train', ratio=1, ref_ratio=1):
+class ReferenceOneToOneDataset(TemporalDataset):
+    def __init__(self, data_path, ref_data_path, transform=None, ref_transform=None, split='train', ref_split='train'):
         super().__init__(data_path, transform, split)
         self.ref_data_path = ref_data_path
         self.ref_transform = ref_transform
@@ -21,8 +21,6 @@ class ReferenceDataset(TemporalDataset):
         elif isinstance(ref_split, list):
             self.ref_split = [self.ref_all_data['splits'][s] for s in ref_split]
             self.ref_split = list(chain(*self.ref_split))
-        # random.shuffle(self.ref_split)
-        self.ref_split = self.ref_split[:int(len(self.ref_split) * ref_ratio)]
 
         self.ref_data = [self.ref_all_data['sequences'][i] for i in self.ref_split]
         self.ref_seq_lens = [len(seq['point_clouds']) for seq in self.ref_data]
@@ -31,7 +29,7 @@ class ReferenceDataset(TemporalDataset):
     def __getitem__(self, idx):
         sample = super().__getitem__(idx)
 
-        ref_idx = random.randint(0, self.ref_len - 1)
+        ref_idx = idx #random.randint(0, self.ref_len - 1)
         ref_seq_idx = 0
         while ref_idx >= self.ref_seq_lens[ref_seq_idx]:
             ref_idx -= self.ref_seq_lens[ref_seq_idx]
@@ -54,10 +52,7 @@ class ReferenceDataset(TemporalDataset):
     @staticmethod
     def collate_fn(batch):
         batch_data = {}
-        keys = ['point_clouds', 'keypoints', 'centroid', 'radius']
-        if 'point_clouds_trans' in batch[0][0].keys():
-            keys.append('point_clouds_trans')
-        for key in keys:
+        for key in ['point_clouds', 'keypoints', 'centroid', 'radius']:
             batch_data[key] = torch.stack([sample[0][key] for sample in batch], dim=0)
             batch_data['ref_'+key] = torch.stack([sample[1][key] for sample in batch], dim=0)
 
