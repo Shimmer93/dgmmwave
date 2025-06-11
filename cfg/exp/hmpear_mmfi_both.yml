@@ -16,6 +16,7 @@ train_dataset:
     ref_data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmfi.pkl
     ref_split: [train_rdn_p3, val_rdn_p3]
     ref_ratio: 0.1
+    both: true
     # trans: true
 val_dataset:
   name: TemporalDataset

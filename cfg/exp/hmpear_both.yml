@@ -13,6 +13,7 @@ train_dataset:
   params:
     data_path: &data_path data/hmpear_mm_mmfi2.pkl
     split: [train, val]
+    both: true
 val_dataset:
   name: TemporalDataset
   params:
