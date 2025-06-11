@@ -28,7 +28,8 @@ class UnsupLoss(torch.nn.Module):
     def __init__(self, loss_params):
         super().__init__()
         self.model = create_model('P4TransformerMotion', loss_params['model_params'])
-        self.model.load_state_dict(torch.load(loss_params['model_checkpoint'], map_location='cpu')['state_dict'], strict=False)
+        if loss_params['model_checkpoint'] is not None:
+            self.model.load_state_dict(torch.load(loss_params['model_checkpoint'], map_location='cpu')['state_dict'], strict=False)
         self.model.eval()
         for param in self.model.parameters():
             param.requires_grad = False
@@ -217,52 +218,45 @@ class LitModel(pl.LightningModule):
             if self.hparams.train_dataset['name'] in ['ReferenceDataset'] and self.hparams.ours:
                 batch_sup = batch['sup']
                 batch_unsup = batch['unsup']
-                
-                x_sup0 = batch_sup['point_clouds']
-                x_sup1 = batch_sup['point_clouds_trans']
-                y_sup = batch_sup['keypoints']
-                xr_sup0 = batch_sup['ref_point_clouds']
-                xr_sup1 = batch_sup['ref_point_clouds_trans']
-                yr_sup = batch_sup['ref_keypoints']
-                x_unsup = batch_unsup['point_clouds']
 
-                # print(f'x_sup0: {x_sup0.shape}, xr_sup0: {xr_sup0.shape}')
+                if self.hparams.train_dataset['params']['both']:
+                    x_sup0 = batch_sup['point_clouds']
+                    x_sup1 = batch_sup['point_clouds_trans']
+                    y_sup = batch_sup['keypoints']
+                    xr_sup0 = batch_sup['ref_point_clouds']
+                    yr_sup = batch_sup['ref_keypoints']
+                    x_unsup = batch_unsup['point_clouds']
 
-                x_sup0_t0 = torch.cat((x_sup0[:, :-1, :, :3], xr_sup0[:, :-1, :, :3]), dim=0)
-                x_sup1_t0 = torch.cat((x_sup1[:, :-1, :, :3], xr_sup1[:, :-1, :, :3]), dim=0)
-                x_sup0_t1 = torch.cat((x_sup0[:, 1:, :, :3], xr_sup0[:, 1:, :, :3]), dim=0)
-                x_sup1_t1 = torch.cat((x_sup1[:, 1:, :, :3], xr_sup1[:, 1:, :, :3]), dim=0)
-                y_sup_t0 = torch.cat((y_sup[:, :-1, :, :3], yr_sup[:, :-1, :, :3]), dim=0)
-                y_sup_t1 = torch.cat((y_sup[:, 1:, :, :3], yr_sup[:, 1:, :, :3]), dim=0)
+                    x_sup0_ = torch.cat((x_sup0, xr_sup0), dim=0)
+                    y_sup_ = torch.cat((y_sup, yr_sup), dim=0)
 
-                if torch.rand(1).item() < 0.5:
-                    perm = torch.randperm(x_sup0_t0.shape[-2])
-                    num2exchange = torch.randint(0, x_sup0_t0.shape[-2], (1,)).item()
-                    x_sup0_t0_ = torch.cat((x_sup0_t0[..., perm[:num2exchange], :3], x_sup1_t0[..., perm[num2exchange:], :3]), dim=-2)
-                    x_sup1_t0_ = torch.cat((x_sup1_t0[..., perm[:num2exchange], :3], x_sup0_t0[..., perm[num2exchange:], :3]), dim=-2)
-                    x_sup0_t0 = x_sup0_t0_
-                    x_sup1_t0 = x_sup1_t0_
+                    B = x_sup0.shape[0]
+                    if torch.rand(1).item() < 0.5:
+                        perm = torch.randperm(x_sup0_.shape[-2])
+                        num2exchange = torch.randint(0, x_sup0_.shape[-2], (1,)).item()
+                        x_sup0__ = torch.cat((x_sup0_[:B, ..., perm[:num2exchange], :3], x_sup1[:B, ..., perm[num2exchange:], :3]), dim=-2)
+                        x_sup1[:B] = torch.cat((x_sup1[:B, ..., perm[:num2exchange], :3], x_sup0_[:B, ..., perm[num2exchange:], :3]), dim=-2)
+                        x_sup0_[:B] = x_sup0__
 
-                if torch.rand(1).item() < 0.5:
-                    perm = torch.randperm(x_sup0_t0.shape[-2])
-                    num2exchange = torch.randint(0, x_sup0_t0.shape[-2], (1,)).item()
-                    x_sup0_t1_ = torch.cat((x_sup0_t1[..., perm[:num2exchange], :3], x_sup1_t1[..., perm[num2exchange:], :3]), dim=-2)
-                    x_sup1_t1_ = torch.cat((x_sup1_t1[..., perm[:num2exchange], :3], x_sup0_t1[..., perm[num2exchange:], :3]), dim=-2)
-                    x_sup0_t1 = x_sup0_t1_
-                    x_sup1_t1 = x_sup1_t1_
+                    y_sup0_hat = self.model(x_sup0_)
+                    y_sup1_hat = self.model(x_sup1)
 
-                y_sup_t0_hat0 = self.model(x_sup0_t0)
-                y_sup_t1_hat0 = self.model(x_sup0_t1)
-                y_sup_t0_hat1 = self.model(x_sup1_t0)
-                y_sup_t1_hat1 = self.model(x_sup1_t1)
+                    y_hat = y_sup0_hat[:B]
 
-                y_hat = y_sup_t1_hat0[:y_sup_t0.shape[0]//2]
+                    loss_sup = self.loss(y_sup0_hat[:B], y_sup_) + self.loss(y_sup1_hat, y_sup)
+                else:
+                    x_sup = batch_sup['point_clouds']
+                    y_sup = batch_sup['keypoints']
+                    xr_sup = batch_sup['ref_point_clouds']
+                    yr_sup = batch_sup['ref_keypoints']
+                    x_unsup = batch_unsup['point_clouds']
 
-                # with open('aaaaaaaaaaaa.txt', 'a') as f:
-                #     f.write(f'{y_sup_t0}\n')
+                    y_sup_hat = self.model(x_sup)
+                    yr_sup_hat = self.model(xr_sup)
+                    y_hat = y_sup_hat
 
-                loss_sup_t0 = F.mse_loss(y_sup_t0_hat0, y_sup_t0) + F.mse_loss(y_sup_t0_hat1, y_sup_t0.clone())
-                loss_sup_t1 = F.mse_loss(y_sup_t1_hat0, y_sup_t1) + F.mse_loss(y_sup_t1_hat1, y_sup_t1.clone())
+                    loss_sup = self.loss(y_sup_hat, y_sup) + self.loss(yr_sup_hat, yr_sup)
+
                 
                 x_unsup_t0 = x_unsup[:, :-1, ...]
                 x_unsup_t1 = x_unsup[:, 1:, ...]
@@ -273,18 +267,29 @@ class LitModel(pl.LightningModule):
                 unsup_loss = self.loss.to(self.device)
                 loss_unsup_dynamic, loss_unsup_static, loss_unsup_dist = unsup_loss(x_unsup, y_unsup_t0_hat, y_unsup_t1_hat)
 
-                # if self.current_epoch < 10:
-                #     loss = loss_sup_t0 + loss_sup_t1
-                # else:
-                loss = loss_sup_t0 + loss_sup_t1 + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static + self.hparams.w_dist * loss_unsup_dist
-                losses = {'loss': loss, 'loss_sup': loss_sup_t0 + loss_sup_t1, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static, 'loss_unsup_dist': loss_unsup_dist}
+                loss = loss_sup + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static + self.hparams.w_dist * loss_unsup_dist
+                losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static, 'loss_unsup_dist': loss_unsup_dist}
 
             elif self.hparams.train_dataset['name'] in ['ReferenceDataset']:
                 x_ref = batch['ref_point_clouds']
                 y_ref = batch['ref_keypoints']
-                y_hat = self.model(x)
-                y_ref_hat = self.model(x_ref)
-                loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
+
+                if self.hparams.train_dataset['params']['both']:
+                    x_ = batch['point_clouds_trans']
+                    if torch.rand(1).item() < 0.5:
+                        perm = torch.randperm(x_.shape[-2])
+                        num2exchange = torch.randint(0, x_.shape[-2], (1,)).item()
+                        x__ = torch.cat((x[..., perm[:num2exchange], :3], x_[..., perm[num2exchange:], :3]), dim=-2)
+                        x_ = torch.cat((x_[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
+                        x = x__
+                    y_hat = self.model(x)
+                    y_hat_ = self.model(x_)
+                    y_ref_hat = self.model(x_ref)
+                    loss = self.loss(y_hat, y) + self.loss(y_hat_, y) + self.loss(y_ref_hat, y_ref)
+                else:
+                    y_hat = self.model(x)
+                    y_ref_hat = self.model(x_ref)
+                    loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
                 losses = {'loss': loss}
             elif self.hparams.train_dataset['name'] in ['ReferenceOneToOneDataset']:
                 x_ref = batch['ref_point_clouds']
@@ -301,8 +306,20 @@ class LitModel(pl.LightningModule):
                 loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
                 losses = {'loss': loss}
             else:
-                y_hat = self.model(x)
-                loss = self.loss(y_hat, y)
+                if self.hparams.train_dataset['params']['both']:
+                    x_ = batch['point_clouds_trans']
+                    if torch.rand(1).item() < 0.5:
+                        perm = torch.randperm(x_.shape[-2])
+                        num2exchange = torch.randint(0, x_.shape[-2], (1,)).item()
+                        x__ = torch.cat((x[..., perm[:num2exchange], :3], x_[..., perm[num2exchange:], :3]), dim=-2)
+                        x_ = torch.cat((x_[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
+                        x = x__
+                    y_hat = self.model(x)
+                    y_hat_ = self.model(x_)
+                    loss = self.loss(y_hat, y) + self.loss(y_hat_, y)
+                else:
+                    y_hat = self.model(x)
+                    loss = self.loss(y_hat, y)
                 losses = {'loss': loss}
         elif self.hparams.model_name in ['P4TransformerSimCC']:
             c_hat, y_hat = self.model(x)

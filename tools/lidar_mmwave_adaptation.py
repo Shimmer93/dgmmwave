@@ -47,6 +47,36 @@ def calc_similarity_flow(a, b, b_flow):
     
     return sim
 
+def calc_similarity_joint(a, b):
+    # a: [n, p, 2, 3] n: number of sequences, p: number of bones connecting the joint, 3: direction
+    # b: [m, p, 2, 3] m: number of sequences, p: number of bones connecting the joint, 3: direction
+    # return: [n, m] similarity between the two joints
+
+    a0 = a[:, :, 0, :] # [n, p, 3]
+    b0 = b[:, :, 0, :] # [m, p, 3]
+
+    # a_flow = a[:, :, 1, :] / np. - a[:, :, 0, :] # [n, p, 3]
+    # b_flow = b[:, :, 1, :] / np. - b[:, :, 0, :] # [m, p, 3]
+    a_normed = a / np.linalg.norm(a, axis=-1, keepdims=True) # [n, p, 2, 3]
+    b_normed = b / np.linalg.norm(b, axis=-1, keepdims=True) # [m, p, 2, 3]
+    
+
+    # cosine similarity
+    a0_ = a0.reshape(-1, 3) # [n*p, 3]
+    b0_ = b0.reshape(-1, 3) # [m*p, 3]
+    sim0 = np.dot(a0_, b0_.T) / (np.linalg.norm(a0_, axis=1)[:, None] * np.linalg.norm(b0_, axis=1)) # values in [-1, 1]
+
+    # angle similarity
+    angle_a = np.arccos(np.clip(np.sum(a_normed[:, :, 0, :] * a_normed[:, :, 1, :], axis=-1), -1, 1)) # [n, p]
+    angle_b = np.arccos(np.clip(np.sum(b_normed[:, :, 0, :] * b_normed[:, :, 1, :], axis=-1), -1, 1)) # [m, p]
+    angle_sim = np.exp(-np.abs(angle_a[:, None] - angle_b[None, :]) / (np.pi / 2)) # [n, m] values in [0, 1]
+    # map to [-1, 1]
+    angle_sim = (angle_sim - 0.5) * 2
+
+    # combine the two similarity measures
+    sim = (sim0 + angle_sim) / 2 # [n, m] values in [-1, 1]
+    return sim
+
 def load_dataset(data_fn, ratio=1.0):
     if os.path.exists(data_fn.replace('.pkl', f'{ratio}_tmp.pkl')):
         with open(data_fn.replace('.pkl', f'{ratio}_tmp.pkl'), 'rb') as f:

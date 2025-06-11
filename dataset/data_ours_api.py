@@ -83,7 +83,7 @@ class OurDataModule(pl.LightningDataModule):
             drop_last=True
         )
 
-        return CombinedLoader({'sup': sup_loader, 'unsup': unsup_loader}, mode='max_size_cycle')
+        return CombinedLoader({'sup': sup_loader, 'unsup': unsup_loader}, mode='min_size')
     
     def val_dataloader(self):
         return DataLoader(
