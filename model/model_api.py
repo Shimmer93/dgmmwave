@@ -219,7 +219,7 @@ class LitModel(pl.LightningModule):
                 batch_sup = batch['sup']
                 batch_unsup = batch['unsup']
 
-                if self.hparams.train_dataset['params']['both']:
+                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
                     x_sup0 = batch_sup['point_clouds']
                     x_sup1 = batch_sup['point_clouds_trans']
                     y_sup = batch_sup['keypoints']
@@ -274,7 +274,7 @@ class LitModel(pl.LightningModule):
                 x_ref = batch['ref_point_clouds']
                 y_ref = batch['ref_keypoints']
 
-                if self.hparams.train_dataset['params']['both']:
+                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
                     x_ = batch['point_clouds_trans']
                     if torch.rand(1).item() < 0.5:
                         perm = torch.randperm(x_.shape[-2])
@@ -306,7 +306,7 @@ class LitModel(pl.LightningModule):
                 loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
                 losses = {'loss': loss}
             else:
-                if self.hparams.train_dataset['params']['both']:
+                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
                     x_ = batch['point_clouds_trans']
                     if torch.rand(1).item() < 0.5:
                         perm = torch.randperm(x_.shape[-2])
