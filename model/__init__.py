@@ -1,4 +1,5 @@
 from .P4Transformer.model import P4Transformer
+from .P4Transformer.model_lidar_mmwave import P4TransformerLidarMMWave
 from .P4Transformer.model_motion import P4TransformerMotion
 from .P4Transformer.model_simcc import P4TransformerSimCC
 from .P4Transformer.model_anchor import P4TransformerAnchor
@@ -14,6 +15,7 @@ from .Flow2Pose.sp_transformer import SpatialTemporalJointTransformer
 
 __all__ = [
     'P4Transformer',
+    'P4TransformerLidarMMWave',
     'P4TransformerMotion',
     'P4TransformerSimCC',
     'P4TransformerAnchor',

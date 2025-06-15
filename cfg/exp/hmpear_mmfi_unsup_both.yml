@@ -25,8 +25,8 @@ unsup_dataset:
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: *data_path
-    split: test
+    data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmfi.pkl
+    split: test_rdn_p3
 test_dataset:
   name: TemporalDataset
   params:
@@ -88,8 +88,8 @@ loss_params:
     output_dim: 3
     features: 1
 # weight for auxiliary losses
-w_dynamic: 0
-w_static: 0.001
+w_dynamic: 0.1
+w_static: 0.01
 w_dist: 0.0001
 # --------------------------------------
 # Augmentation parameters
@@ -174,58 +174,6 @@ train_pipeline: &train_pipeline
     params: null
     ori_key: point_clouds
     more_keys: [point_clouds_trans]
-ref_pipeline: 
-  - name: UniformSample
-    params: 
-      pad_type: 'start'
-      clip_len: 5
-  - name: GetCentroid
-    params: 
-      centroid_type: 'kps'
-  - name: Normalize
-    params:
-      feat_scale: null
-  - name: ToITOP
-    params: null
-  - name: RemoveOutliers
-    params: 
-      outlier_type: 'box'
-      radius: 1.5
-  - name: AddNoisyPoints
-    params:
-      add_std: 0.2
-      num_added: 32
-      zero_centered: false
-    prob: 0.5
-  - name: RandomScale
-    params:
-      scale_min: 0.9
-      scale_max: 1.1
-    prob: 0.5
-  - name: RandomRotate
-    params:
-      deg: true
-      angle_min: -10
-      angle_max: 10
-    prob: 0.5
-  - name: RandomTranslate
-    params:
-      translate_range: 0.01
-    prob: 0.5
-  - name: ReduceKeypointLen
-    params:
-      only_one: true
-      keep_type: 'end'
-      frame_to_reduce: 0
-  - name: Pad
-    params:
-      max_len: 256
-  - name: RandomJitter
-    params:
-      jitter_std: 0.05
-    prob: 0.5
-  - name: ToTensor
-    params: null
 val_pipeline: &val_pipeline
   - name: UniformSample
     params:
@@ -234,8 +182,8 @@ val_pipeline: &val_pipeline
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-  # - name: ToITOP
-  #   params: null
+  - name: ToITOP
+    params: null
   - name: Normalize
     params:
       feat_scale: null
@@ -283,5 +231,5 @@ test_pipeline: &test_pipeline
       max_len: 256
   - name: ToTensor
     params: null
-# ref_pipeline: *train_pipeline
+ref_pipeline: *test_pipeline
 unsup_pipeline: *test_pipeline

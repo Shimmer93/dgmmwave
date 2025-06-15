@@ -1,7 +1,7 @@
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 
-from dataset.transforms import RandomApply, ComposeTransform
+from dataset.transforms import RandomApply, ComposeTransform, MultipleKeyAggregate
 from misc.utils import import_with_str
 
 class PipelineTransform(ComposeTransform):
@@ -13,10 +13,12 @@ class PipelineTransform(ComposeTransform):
             tsfms_params = tsfm['params']
             if tsfms_params is None:
                 tsfms_params = {}
+            tsfm_ = tsfm_class(**tsfms_params)
             if 'prob' in tsfm:
-                tsfms.append(RandomApply([tsfm_class(**tsfms_params)], prob=tsfm['prob']))
-            else:
-                tsfms.append(tsfm_class(**tsfms_params))
+                tsfm_ = RandomApply([tsfm_], prob=tsfm['prob'])
+            if 'ori_key' in tsfm:
+                tsfm_ = MultipleKeyAggregate([tsfm_], tsfm['ori_key'], tsfm['more_keys'])
+            tsfms.append(tsfm_)
 
         super().__init__(tsfms)
 

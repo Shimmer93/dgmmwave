@@ -220,17 +220,20 @@ class LitModel(pl.LightningModule):
                 batch_unsup = batch['unsup']
 
                 if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
-                    x_sup0 = batch_sup['point_clouds']
-                    x_sup1 = batch_sup['point_clouds_trans']
+                    x_sup0 = batch_sup['point_clouds'][..., :3]
+                    x_sup1 = batch_sup['point_clouds_trans'][..., :-1, :, :3]
                     y_sup = batch_sup['keypoints']
-                    xr_sup0 = batch_sup['ref_point_clouds']
+                    xr_sup0 = batch_sup['ref_point_clouds'][..., :3]
                     yr_sup = batch_sup['ref_keypoints']
                     x_unsup = batch_unsup['point_clouds']
+
+                    B = x_sup0.shape[0]
 
                     x_sup0_ = torch.cat((x_sup0, xr_sup0), dim=0)
                     y_sup_ = torch.cat((y_sup, yr_sup), dim=0)
 
-                    B = x_sup0.shape[0]
+                    # print(f'x_sup0_ shape: {x_sup0_.shape}, x_sup1 shape: {x_sup1.shape}')
+
                     if torch.rand(1).item() < 0.5:
                         perm = torch.randperm(x_sup0_.shape[-2])
                         num2exchange = torch.randint(0, x_sup0_.shape[-2], (1,)).item()
@@ -243,7 +246,7 @@ class LitModel(pl.LightningModule):
 
                     y_hat = y_sup0_hat[:B]
 
-                    loss_sup = self.loss(y_sup0_hat[:B], y_sup_) + self.loss(y_sup1_hat, y_sup)
+                    loss_sup = F.mse_loss(y_sup0_hat, y_sup_) + F.mse_loss(y_sup1_hat, y_sup)
                 else:
                     x_sup = batch_sup['point_clouds']
                     y_sup = batch_sup['keypoints']
@@ -255,7 +258,7 @@ class LitModel(pl.LightningModule):
                     yr_sup_hat = self.model(xr_sup)
                     y_hat = y_sup_hat
 
-                    loss_sup = self.loss(y_sup_hat, y_sup) + self.loss(yr_sup_hat, yr_sup)
+                    loss_sup = F.mse_loss(y_sup_hat, y_sup) + F.mse_loss(yr_sup_hat, yr_sup)
 
                 
                 x_unsup_t0 = x_unsup[:, :-1, ...]
@@ -448,7 +451,21 @@ class LitModel(pl.LightningModule):
             l_pc2 = self.loss(y_hat_ref, y_ref)
             loss = l_pc + l_pc2 + self.hparams.w_rec * l_rec #+ self.hparams.w_mem * l_mem # + w_con * l_con
             losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_rec': l_rec}
-            
+        
+        elif self.hparams.model_name in ['P4TransformerLidarMMWave']:
+            x_ref = batch['point_clouds_trans']
+            if torch.rand(1).item() < 0.1:
+                x = None
+            else:
+                x_ref = None
+
+            y_hat = self.model(x, x_ref)
+            loss = self.loss(y_hat, y)
+            losses = {'loss': loss}
+
+            if x is None:
+                x = batch['point_clouds']
+
         elif self.hparams.model_name == 'PoseTransformer':
             #TODO: Implement the loss function of posetran
             # sformer
@@ -485,6 +502,10 @@ class LitModel(pl.LightningModule):
         elif self.hparams.model_name in ['P4TransformerMotion']:
             m_hat = self.model(x)
             return x, y, y, m_hat
+        elif self.hparams.model_name in ['P4TransformerLidarMMWave']:
+            x_ref = batch['point_clouds_trans']
+            y_hat = self.model(x, x_ref)
+            return x, y, y_hat
         else:
             y_hat = self.model(x)
             return x, y, y_hat

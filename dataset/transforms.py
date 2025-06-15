@@ -204,9 +204,12 @@ class ConvertToRefinedMMWavePointCloud():
             # Calculate weighted average of keypoint flows for each point
             weights_expanded = weights_normalized[:, :, np.newaxis]  # (N, J, 1)
             pcf = (weights_expanded * kpf_expanded).sum(axis=1)  # (N, 3)
+            pcf = np.linalg.norm(pcf, axis=-1)  # (N,)
+            # print(f'Point cloud flow at time {t}: {np.mean(pcf):.4f} ± {np.std(pcf):.4f}, min: {np.min(pcf):.4f}, max: {np.max(pcf):.4f}')
 
             # 4. Filter points based on flow threshold
-            mask = np.linalg.norm(pcf, axis=-1) > flow_thres  # (N,)
+            mask = pcf > flow_thres  # (N,)
+            # print(np.sum(mask), np.any(mask))
             # print(f'{np.sum(mask)} / {pc.shape[0]} points above flow threshold {flow_thres:.4f} at time {t}')
             if np.any(mask):
                 new_pc = pc[mask]

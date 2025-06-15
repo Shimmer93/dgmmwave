@@ -15,12 +15,13 @@ train_dataset:
     split: [train, val]
     ref_data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmfi.pkl
     ref_split: [train_rdn_p3, val_rdn_p3]
-    ref_ratio: 0.1
+    # ref_ratio: 0.1
+    both: true
 unsup_dataset:
   name: TemporalDataset
   params:
-    data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmfi.pkl
-    split: [train_rdn_p3, val_rdn_p3]
+    data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmbody.pkl
+    split: [train, val]
 val_dataset:
   name: TemporalDataset
   params:
@@ -30,7 +31,7 @@ test_dataset:
   name: TemporalDataset
   params:
     data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmbody.pkl
-    split: test #_rdn_p3
+    split: test
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -71,7 +72,7 @@ model_params:
 # --------------------------------------
 loss_name: UnsupLoss
 loss_params:
-  model_checkpoint: /home/zpengac/mmwave/dgmmwave/P4TransformerMotion-epoch=99-val_loss=0.1788.ckpt
+  model_checkpoint: null #/home/zpengac/pose/dgmmwave/logs/mmfi_motion/20250530_105349/P4TransformerMotion-epoch=99-val_loss=0.1788.ckpt
   model_params:
     radius: 0.7
     nsamples: 32
@@ -98,46 +99,62 @@ train_pipeline: &train_pipeline
     params: 
       pad_type: 'start'
       clip_len: 6
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: Normalize
     params:
       feat_scale: null
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   # - name: ToITOP
   #   params: null
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
       radius: 1.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: AddNoisyPoints
     params:
       add_std: 0.2
       num_added: 32
       zero_centered: false
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   # - name: DropPointsAtSegmentedJoints
   #   params:
   #     max_num2drop: 14
   #   prob: 0.9
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.02
+      max_dist_threshold: 0.025
   - name: RandomScale
     params:
       scale_min: 0.9
       scale_max: 1.1
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: RandomRotate
     params:
       deg: true
       angle_min: -10
       angle_max: 10
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: RandomTranslate
     params:
       translate_range: 0.01
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: ReduceKeypointLen
     params:
       only_one: false
@@ -145,12 +162,18 @@ train_pipeline: &train_pipeline
   - name: Pad
     params:
       max_len: 256
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: RandomJitter
     params:
       jitter_std: 0.05
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: ToTensor
     params: null
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
 val_pipeline: &val_pipeline
   - name: UniformSample
     params:

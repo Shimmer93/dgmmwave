@@ -65,8 +65,10 @@ class TemporalDataset(Dataset):
     def collate_fn(batch):
         batch_data = {}
         keys = ['point_clouds', 'keypoints', 'centroid', 'radius', 'sequence_index']
+        # print(type(batch[0]['point_clouds_trans']))
         if 'point_clouds_trans' in batch[0].keys() and isinstance(batch[0]['point_clouds_trans'], torch.Tensor):
             keys.append('point_clouds_trans')
+        # print('collate_fn keys: ', keys)
         for key in keys:
             batch_data[key] = torch.stack([sample[key] for sample in batch], dim=0)
 
