@@ -25,8 +25,8 @@ unsup_dataset:
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmfi.pkl
-    split: test_rdn_p3
+    data_path: data/hmpear_mm_mmfi2.pkl
+    split: test
 test_dataset:
   name: TemporalDataset
   params:
@@ -182,8 +182,8 @@ val_pipeline: &val_pipeline
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-  - name: ToITOP
-    params: null
+  # - name: ToITOP
+  #   params: null
   - name: Normalize
     params:
       feat_scale: null
