@@ -25,47 +25,57 @@ def create_model(model_name, model_params):
     return model
 
 class UnsupLoss(torch.nn.Module):
-    def __init__(self, loss_params):
+    def __init__(self, thres_static=0.2, thres_dist=0.1):
         super().__init__()
-        self.model = create_model('P4TransformerMotion', loss_params['model_params'])
-        if loss_params['model_checkpoint'] is not None:
-            self.model.load_state_dict(torch.load(loss_params['model_checkpoint'], map_location='cpu')['state_dict'], strict=False)
-        self.model.eval()
-        for param in self.model.parameters():
-            param.requires_grad = False
+        self.thres_static = thres_static
+        self.thres_dist = thres_dist
         self.chamfer_dist = ChamferDistance()
 
     def forward(self, x, y_hat0, y_hat1):
+        # x: B T N C
+        # y_hat0: B 1 J 3
+        # y_hat1: B 1 J 3
+
         x_t01 = x[:, -2:, ...]
-        m_hat = self.model(x_t01)
+        # m_hat = self.model(x_t01)
         x_t0 = x_t01[:, 0:1, :, :3]  # B 1 N 3
         x_t1 = x_t01[:, 1:2, :, :3]  # B 1 N 3
-        x_t1_hat = x_t0 + m_hat  # B 1 N 3
-        dist1, dist2 = self.chamfer_dist(x_t1_hat[:, 0, :, :3], x_t1[:, 0, :, :3])
-        loss_chamfer = dist1.mean(dim=-1) + dist2.mean(dim=-1)
-        mask_chamfer = (loss_chamfer < 0.1).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1).detach()
 
-        dists = torch.norm(y_hat0[:, 0].unsqueeze(2) - x_t0[:, 0].
-                           unsqueeze(1), dim=-1) # B J N
+        # 1. Calculate keypoint flow (temporal displacement)
+        yf = y_hat1 - y_hat0  # B 1 J 3
+
+        x_t0_expanded = x_t0.unsqueeze(3)  # B 1 N 1 3
+        yf_expanded = yf.unsqueeze(2)  # B 1 1 J 3
+        y_expanded = y_hat0.unsqueeze(2)  # B 1 1 J 3
+
+        # Calculate pairwise distances between points and keypoints
+        pairwise_distances = torch.norm(x_t0_expanded - y_expanded, dim=-1)  # B 1 N J
+
+        # 3. Calculate estimated point cloud flow
+        # Use inverse distance weighting to estimate flow for each point
+        # Add small epsilon to avoid division by zero
+        eps = 1e-8
+        weights = 1.0 / (pairwise_distances + eps)  # B 1 N J
+        weights_normalized = weights / (weights.sum(dim=-1, keepdim=True) + eps)  # B 1 N J
+
+        weights_expanded = weights_normalized.unsqueeze(-1)  # B 1 N J 1
+        xf = (weights_expanded * yf_expanded).sum(dim=-2)  # B 1 N 3
+        x_t1_hat = x_t0 + xf  # B 1 N 3
+
+        # 4. Calculate the Chamfer distance between estimated and actual point clouds
+        dist1, dist2 = self.chamfer_dist(x_t1_hat[:, 0, :, :3], x_t1[:, 0, :, :3])
+        loss_dynamic = dist1.mean() + dist2.mean()
+
         dists2 = torch.norm(y_hat0[:, 0].unsqueeze(2) - torch.cat([x_t0[:, 0], x_t1[:, 0]], dim=1).
                            unsqueeze(1), dim=-1) # B J N
-        min_dists, min_indices = torch.min(dists, dim=-1) # B J, B J
-        min_dists2, min_indices2 = torch.min(dists2, dim=-1) # B J, B J
-        mask_dist = (min_dists < 0.05).unsqueeze(1).unsqueeze(-1).detach() # B 1 J 1
-        mask_dist_neg = (min_dists2 > 0.2).unsqueeze(1).unsqueeze(-1).detach() # B 1 J 1
-        min_indices_expanded = min_indices.unsqueeze(-1).expand(-1, -1, y_hat0.shape[-1]) # B J 3
-        nearest_m = m_hat[:, 0].gather(1, min_indices_expanded)
+        min_dists2, _ = torch.min(dists2, dim=-1) # B J, B J
+        mask_dist_neg = (min_dists2 > self.thres_static).unsqueeze(1).unsqueeze(-1).detach() # B 1 J 1
 
         dist1, dist2 = self.chamfer_dist(x_t0[:, 0].to(torch.float), y_hat0[:, 0].to(torch.float))
-        loss_dist = dist1[dist1 < 0.1].mean()
+        loss_dist = dist1[dist1 < self.thres_dist].mean()
 
-        # print(f'mask_dist_neg: {mask_dist_neg.sum()}/{mask_dist_neg.numel()}')
-
-        loss_dynamic = F.mse_loss((y_hat1 - y_hat0) * mask_chamfer * mask_dist, nearest_m * mask_chamfer * mask_dist)
         my_hat_static = (y_hat1 - y_hat0) * mask_dist_neg
         loss_static = F.mse_loss(my_hat_static, torch.zeros_like(my_hat_static))
-        # loss_dynamic = F.mse_loss((y_hat1 - y_hat0) * mask_chamfer * mask_dist, nearest_m * mask_chamfer * mask_dist)
-        # loss_static = F.mse_loss((y_hat1 - y_hat0) * mask_dist_neg, torch.zeros_like(y_hat0) * mask_dist_neg)
 
         return loss_dynamic, loss_static, loss_dist
 
@@ -73,7 +83,7 @@ def create_loss(loss_name, loss_params):
     if loss_params is None:
         loss_params = {}
     if loss_name == 'UnsupLoss':
-        loss = UnsupLoss(loss_params)
+        loss = UnsupLoss(**loss_params)
     else:
         loss_class = import_with_str('torch.nn', loss_name)
         loss = loss_class(**loss_params)
@@ -225,7 +235,7 @@ class LitModel(pl.LightningModule):
                     y_sup = batch_sup['keypoints']
                     xr_sup0 = batch_sup['ref_point_clouds'][..., :3]
                     yr_sup = batch_sup['ref_keypoints']
-                    x_unsup = batch_unsup['point_clouds']
+                    x_unsup = batch_unsup['point_clouds'][..., :3]
 
                     B = x_sup0.shape[0]
 
@@ -278,7 +288,7 @@ class LitModel(pl.LightningModule):
                 y_ref = batch['ref_keypoints']
 
                 if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
-                    x_ = batch['point_clouds_trans']
+                    x_ = batch['point_clouds_trans'][..., :-1, :, :3]
                     if torch.rand(1).item() < 0.5:
                         perm = torch.randperm(x_.shape[-2])
                         num2exchange = torch.randint(0, x_.shape[-2], (1,)).item()

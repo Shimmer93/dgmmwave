@@ -13,14 +13,14 @@ train_dataset:
   params:
     data_path: &data_path data/hmpear_mm_mmfi2.pkl
     split: [train, val]
-    ref_data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmfi.pkl
+    ref_data_path: data/mmfi.pkl
     ref_split: [train_rdn_p3, val_rdn_p3]
     ref_ratio: 0.1
     both: true
 unsup_dataset:
   name: TemporalDataset
   params:
-    data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmfi.pkl
+    data_path: data/mmfi.pkl
     split: [train_rdn_p3, val_rdn_p3]
 val_dataset:
   name: TemporalDataset
@@ -30,8 +30,8 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: /home/zpengac/mmwave/dgmmwave_demo/data/mmbody.pkl
-    split: test
+    data_path: data/mmbody.pkl
+    split: test #_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -72,25 +72,12 @@ model_params:
 # --------------------------------------
 loss_name: UnsupLoss
 loss_params:
-  model_checkpoint: null #/home/zpengac/pose/dgmmwave/logs/mmfi_motion/20250530_105349/P4TransformerMotion-epoch=99-val_loss=0.1788.ckpt
-  model_params:
-    radius: 0.7
-    nsamples: 32
-    spatial_stride: 8
-    temporal_kernel_size: 3
-    temporal_stride: 1
-    emb_relu: false
-    dim: 1024
-    depth: 5
-    heads: 8
-    dim_head: 128
-    mlp_dim: 2048
-    output_dim: 3
-    features: 1
+  thres_static: 0.15
+  thres_dist: 0.1
 # weight for auxiliary losses
-w_dynamic: 0.1
-w_static: 0.01
-w_dist: 0.0001
+w_dynamic: 0.01
+w_static: 0
+w_dist: 0
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
