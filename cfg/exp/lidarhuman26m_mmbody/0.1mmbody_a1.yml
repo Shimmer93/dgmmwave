@@ -1,0 +1,190 @@
+strategy: ddp
+benchmark: True
+pretrained: False
+sync_batchnorm: False
+clip_grad: null
+precision: 16
+epochs: &epochs 100
+# --------------------------------------
+# Dataset parameters
+# --------------------------------------
+train_dataset:
+  name: ReferenceDataset
+  params:
+    data_path: &data_path data/hmpear_mm_mmbody.pkl
+    split: [train, val]
+    ref_data_path: data/mmbody.pkl
+    ref_split: [train, val]
+    ref_ratio: 0.1
+    # trans: true
+val_dataset:
+  name: TemporalDataset
+  params:
+    data_path: *data_path
+    split: test
+test_dataset:
+  name: TemporalDataset
+  params:
+    data_path: data/mmfi.pkl
+    split: test_rdn_p3
+# --------------------------------------
+# Optimizer parameters
+# --------------------------------------
+optim_name: AdamW
+optim_params:
+  lr: 0.0001
+  weight_decay: 0.00001
+# --------------------------------------
+# Learning rate scheduler parameters
+# --------------------------------------
+sched_name: LinearWarmupCosineAnnealingLR
+sched_params:
+  warmup_epochs: 20
+  max_epochs: *epochs
+  warmup_start_lr: 0.00001
+  eta_min: 0.00001
+# --------------------------------------
+# Model parameters
+# --------------------------------------
+mode: train
+model_name: P4Transformer
+model_params:
+  radius: 0.7
+  nsamples: 32
+  spatial_stride: 8
+  temporal_kernel_size: 3
+  temporal_stride: 1
+  emb_relu: false
+  dim: 1024
+  depth: 5
+  heads: 8
+  dim_head: 128
+  mlp_dim: 2048
+  output_dim: 45
+  features: 1
+# --------------------------------------
+# Loss parameters
+# --------------------------------------
+loss_name: MSELoss
+loss_params: null
+# weight for auxiliary losses
+w_rec: 0.001
+w_mem: 0.001
+# --------------------------------------
+# Augmentation parameters
+# --------------------------------------
+train_pipeline:
+  - name: UniformSample
+    params: 
+      pad_type: 'start'
+      clip_len: 5
+  - name: GetCentroid
+    params: 
+      centroid_type: 'kps'
+  - name: Normalize
+    params:
+      feat_scale: null
+  # - name: ToITOP
+  #   params: null
+  - name: RemoveOutliers
+    params: 
+      outlier_type: 'box'
+      radius: 1.5
+  - name: AddNoisyPoints
+    params:
+      add_std: 0.2
+      num_added: 32
+      zero_centered: false
+    prob: 0.5
+  # - name: GenerateSegmentationGroundTruth
+  #   params: null
+  - name: ConvertToRefinedMMWavePointCloud
+    params:
+      max_dist_threshold: 0.025
+  - name: RandomScale
+    params:
+      scale_min: 0.9
+      scale_max: 1.1
+    prob: 0.5
+  - name: RandomRotate
+    params:
+      deg: true
+      angle_min: -10
+      angle_max: 10
+    prob: 0.5
+  - name: RandomTranslate
+    params:
+      translate_range: 0.01
+    prob: 0.5
+  - name: ReduceKeypointLen
+    params:
+      only_one: true
+      keep_type: 'end'
+      frame_to_reduce: 0
+  - name: Pad
+    params:
+      max_len: 256
+  - name: RandomJitter
+    params:
+      jitter_std: 0.05
+    prob: 0.5
+  - name: ToTensor
+    params: null
+val_pipeline: &val_pipeline
+  - name: UniformSample
+    params:
+      pad_type: 'start'
+      clip_len: 5
+  - name: GetCentroid
+    params: 
+      centroid_type: 'kps'
+  # - name: ToITOP
+  #   params: null
+  - name: Normalize
+    params:
+      feat_scale: null
+  - name: RemoveOutliers
+    params: 
+      outlier_type: 'box'
+      radius: 1.5
+  - name: ReduceKeypointLen
+    params:
+      only_one: true
+      keep_type: 'end'
+      frame_to_reduce: 0
+  - name: Pad
+    params:
+      max_len: 256
+  - name: ToTensor
+    params: null
+test_pipeline: &test_pipeline
+  - name: UniformSample
+    params:
+      pad_type: 'start'
+      clip_len: 5
+  - name: GetCentroid
+    params: 
+      centroid_type: 'kps'
+  - name: ToITOP
+    params: null
+  # - name: MultiFrameAggregate
+  #   params:
+  #     num_frames: 3
+  - name: Normalize
+    params:
+      feat_scale: null
+  - name: RemoveOutliers
+    params: 
+      outlier_type: 'box'
+      radius: 1.5
+  - name: ReduceKeypointLen
+    params:
+      only_one: true
+      keep_type: 'end'
+      frame_to_reduce: 0
+  - name: Pad
+    params:
+      max_len: 256
+  - name: ToTensor
+    params: null
+ref_pipeline: *test_pipeline
