@@ -14,116 +14,86 @@ import os
 from collections import OrderedDict
 from copy import deepcopy
 
-from model.P4Transformer.model import P4Transformer
-from model.P4Transformer.model_da import P4TransformerDA
-from model.P4Transformer.model_da2 import P4TransformerDA2
-from model.P4Transformer.model_da3 import P4TransformerDA3
-from model.P4Transformer.model_da4 import P4TransformerDA4
-from model.P4Transformer.model_da5 import P4TransformerDA5
-from model.debug_model import DebugModel
-# from model.dg_model import DGModel
-# from model.dg_model2 import DGModel2
 from model.metrics import calulate_error
-from loss.pose import GeodesicLoss, SymmetryLoss, ReferenceBoneLoss
-from loss.adapt import EntropyLoss, ClassLogitContrastiveLoss
-from misc.utils import torch2numpy
-from misc.skeleton import SimpleCOCOSkeleton
+from model.chamfer_distance import ChamferDistance
+from loss.mpjpe import mpjpe as mpjpe_mmwave
+from misc.utils import torch2numpy, import_with_str, delete_prefix_from_state_dict
+from misc.skeleton import ITOPSkeleton, JOINT_COLOR_MAP
 
-def create_model(hparams):
-    if hparams.model_name.lower() == 'p4t':
-        model = P4Transformer(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda':
-        model = P4TransformerDA(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, mem_size=hparams.mem_size, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda2':
-        model = P4TransformerDA2(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, mem_size=hparams.mem_size, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda3':
-        model = P4TransformerDA3(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda4':
-        model = P4TransformerDA4(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              mlp_dim=hparams.mlp_dim, output_dim=hparams.output_dim, features=hparams.features)
-    elif hparams.model_name.lower() == 'p4tda5':
-        model = P4TransformerDA5(radius=hparams.radius, nsamples=hparams.nsamples, spatial_stride=hparams.spatial_stride,
-                              temporal_kernel_size=hparams.temporal_kernel_size, temporal_stride=hparams.temporal_stride,
-                              emb_relu=hparams.emb_relu,
-                              dim=hparams.dim, depth=hparams.depth, heads=hparams.heads, dim_head=hparams.dim_head,
-                              dim_proposal=hparams.dim_proposal, heads_proposal=hparams.heads_proposal, dim_head_proposal=hparams.dim_head_proposal,
-                              mlp_dim=hparams.mlp_dim, num_joints=hparams.num_joints, features=hparams.features, num_proposal=hparams.num_proposal)
-    elif hparams.model_name.lower() == 'debug':
-        model = DebugModel(in_dim=hparams.in_dim, out_dim=hparams.out_dim)
-    # elif hparams.model_name.lower() == 'dg':
-    #     model = DGModel(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
-    # elif hparams.model_name.lower() == 'dg2':
-    #     model = DGModel2(graph_layout=hparams.graph_layout, graph_mode=hparams.graph_mode, num_features=hparams.num_features, num_joints=hparams.num_joints,
-    #                     num_layers_point=hparams.num_layers_point, num_layers_joint=hparams.num_layers_joint, dim=hparams.dim, num_heads=hparams.num_heads,
-    #                     dim_feedforward=hparams.dim_feedforward, dropout=hparams.dropout)
-    else:
-        raise ValueError(f'Unknown model name: {hparams.model_name}')
-    
+def create_model(model_name, model_params):
+    if model_params is None:
+        model_params = {}
+    model_class = import_with_str('model', model_name)
+    model = model_class(**model_params)
     return model
 
-def create_losses(hparams):
-    losses = {}
-    for loss_name in hparams.loss_names:
-        if loss_name == 'mse':
-            losses['pc'] = nn.MSELoss()
-        elif loss_name == 'segment':
-            losses['seg'] = nn.CrossEntropyLoss()
-        elif loss_name == 'geodesic':
-            losses['geo'] = GeodesicLoss()
-        elif loss_name == 'symmetry':
-            losses['sym'] = SymmetryLoss(left_bones=SimpleCOCOSkeleton.left_bones, right_bones=SimpleCOCOSkeleton.right_bones)
-        elif loss_name == 'reference_bone':
-            losses['ref'] = ReferenceBoneLoss(bones=SimpleCOCOSkeleton.bones, threshold=hparams.ref_bone_threshold)
-        elif loss_name == 'entropy':
-            losses['ent'] = EntropyLoss()
-        elif loss_name == 'class_logit_contrastive':
-            losses['clc'] = ClassLogitContrastiveLoss()
-        else:
-            raise NotImplementedError
-    return losses
+def chamfer_mask(x, y_hat0, y_hat1, thres_static=0.2, thres_dist=0.1):
+    # x: B T N C
+    # y_hat0: B 1 J 3
+    # y_hat1: B 1 J 3
 
-def create_optimizer(hparams, mparams):
-    if hparams.optim_name == 'adam':
-        return optim.Adam(mparams, lr=hparams.lr, weight_decay=hparams.weight_decay)
-    elif hparams.optim_name == 'adamw':
-        return optim.AdamW(mparams, lr=hparams.lr, weight_decay=hparams.weight_decay)
-    elif hparams.optim_name == 'sgd':
-        return optim.SGD(mparams, lr=hparams.lr, momentum=hparams.momentum)
+    x_t01 = x[:, -2:, ...]
+    x_t0 = x_t01[:, 0:1, :, :3]  # B 1 N 3
+    x_t1 = x_t01[:, 1:2, :, :3]  # B 1 N 3
+
+    chamfer_dist = ChamferDistance()
+    dist1, dist2 = chamfer_dist(x_t0[:, 0].to(torch.float), y_hat0[:, 0].to(torch.float))
+
+    mask_dist_pos = (dist2 < thres_dist).unsqueeze(1).unsqueeze(-1).detach()  # B 1 J 1
+    mask_dist_neg = (dist2 > thres_static).unsqueeze(1).unsqueeze(-1).detach()  # B 1 J 1
+    return mask_dist_pos, mask_dist_neg
+
+class UnsupLoss(torch.nn.Module):
+    def __init__(self, thres_static=0.2, thres_dist=0.1):
+        super().__init__()
+        self.thres_static = thres_static
+        self.thres_dist = thres_dist
+        self.chamfer_dist = ChamferDistance()
+
+    def forward(self, x, y_hat0, y_hat1):
+        # x: B T N C
+        # y_hat0: B 1 J 3
+        # y_hat1: B 1 J 3
+
+        mask_dist_pos, mask_dist_neg = chamfer_mask(x, y_hat0, y_hat1, self.thres_static, self.thres_dist)
+        
+        my_hat_dynamic = (y_hat1 - y_hat0) * mask_dist_pos
+        my_norm_hat_dynamic = torch.norm(my_hat_dynamic, p=2, dim=-1)
+        my_norm_hat_dynamic = my_norm_hat_dynamic[my_norm_hat_dynamic > 0]
+        loss_dynamic = torch.relu(0.05 - my_norm_hat_dynamic).mean()
+        
+        my_hat_static = (y_hat1 - y_hat0) * mask_dist_neg
+        my_hat_static = my_hat_static[my_hat_static > 0]
+        loss_static = F.mse_loss(my_hat_static, torch.zeros_like(my_hat_static))
+
+        return loss_dynamic, loss_static
+
+def create_loss(loss_name, loss_params):
+    if loss_params is None:
+        loss_params = {}
+    if loss_name == 'UnsupLoss':
+        loss = UnsupLoss(**loss_params)
     else:
-        raise NotImplementedError
+        loss_class = import_with_str('torch.nn', loss_name)
+        loss = loss_class(**loss_params)
+    return loss
+
+def create_optimizer(optim_name, optim_params, mparams):
+    if optim_params is None:
+        optim_params = {}
+    optim_class = import_with_str('torch.optim', optim_name)
+    optimizer = optim_class(mparams, **optim_params)
+    return optimizer
     
-def create_scheduler(hparams, optimizer):
-    if hparams.sched_name == 'cosine':
-        return LinearWarmupCosineAnnealingLR(optimizer, warmup_epochs=hparams.warmup_epochs, 
-                max_epochs=hparams.epochs, warmup_start_lr=hparams.warmup_lr, eta_min=hparams.min_lr)
-    elif hparams.sched_name == 'step':
-        return sched.MultiStepLR(optimizer, milestones=hparams.milestones, gamma=hparams.gamma)
-    elif hparams.sched_name == 'plateau':
-        return sched.ReduceLROnPlateau(optimizer, patience=hparams.patience, factor=hparams.factor, 
-                min_lr=hparams.min_lr)
+def create_scheduler(sched_name, sched_params, optimizer):
+    if sched_params is None:
+        sched_params = {}
+    if sched_name == 'LinearWarmupCosineAnnealingLR':
+        scheduler = LinearWarmupCosineAnnealingLR(optimizer, **sched_params)
     else:
-        raise NotImplementedError
+        sched_class = import_with_str('torch.optim.lr_scheduler', sched_name)
+        scheduler = sched_class(optimizer, **sched_params)
+    return scheduler
 
 class EMA(nn.Module):
     """ Model Exponential Moving Average V2 from timm"""
@@ -144,7 +114,6 @@ class EMA(nn.Module):
 
     def set(self, model):
         self._update(model, update_fn=lambda e, m: m)
-    
 
 class MeanTeacherLitModel(pl.LightningModule):
     def __init__(self, hparams):
@@ -154,37 +123,94 @@ class MeanTeacherLitModel(pl.LightningModule):
         if hparams.checkpoint_path is not None:
             self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'])
         self.model_ema = EMA(self.model, decay=hparams.ema_decay)
-        self.losses = create_losses(hparams)
+        self.loss = create_loss(hparams.loss_name, hparams.loss_params)
+        if hparams.save_when_test:
+            self.results = []
 
-    def _vis_pred_gt_keypoints(self, y_hat, y, x):
+    def _recover_point_cloud(self, x, center, radius):
+        x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        x = torch2numpy(x)
+        return x
+    
+    def _recover_skeleton(self, y, center, radius):
+        y = y * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        y = torch2numpy(y)
+        return y
+
+    def _recover_data(self, x, y, y_hat, center, radius):
+        x = self._recover_point_cloud(x, center, radius)
+        y = self._recover_skeleton(y, center, radius)
+        y_hat = self._recover_skeleton(y_hat, center, radius)
+        return x, y, y_hat
+
+    def _get_bounds(self, data):
+        all_ps = data[..., :3].reshape(-1, 3)
+        min_x, max_x = np.min(all_ps[:, 0]), np.max(all_ps[:, 0])
+        min_y, max_y = np.min(all_ps[:, 1]), np.max(all_ps[:, 1])
+        min_z, max_z = np.min(all_ps[:, 2]), np.max(all_ps[:, 2])
+        return min_x, max_x, min_y, max_y, min_z, max_z
+    
+    def _set_3d_ax_limits(self, ax, bounds):
+        min_x, max_x, min_y, max_y, min_z, max_z = bounds
+        range_x = max_x - min_x
+        range_y = max_y - min_y
+        range_z = max_z - min_z
+
+        ax.set_box_aspect([range_x, range_y, range_z])
+        ax.set_xlim(min_x - range_x * 0.1, max_x + range_x * 0.1)
+        ax.set_zlim(min_y - range_y * 0.1, max_y + range_y * 0.1)
+        ax.set_ylim(min_z - range_z * 0.1, max_z + range_z * 0.1)
+
+    def _vis_pred_gt_keypoints(self, x, y, y_hat):
         fig = plt.figure()
-        ax_pred = fig.add_subplot(231)
-        ax_gt = fig.add_subplot(232)
-        ax_2d = fig.add_subplot(233)
-        ax_3d = fig.add_subplot(234, projection='3d')
-        ax_pc = fig.add_subplot(235)
+        ax_pred_xy = fig.add_subplot(331)
+        ax_pred_xz = fig.add_subplot(332)
+        ax_pred_yz = fig.add_subplot(333)
+        ax_gt_xy = fig.add_subplot(334)
+        ax_gt_xz = fig.add_subplot(335)
+        ax_gt_yz = fig.add_subplot(336)
+        ax_pred_3d = fig.add_subplot(337, projection='3d')
+        ax_gt_3d = fig.add_subplot(338, projection='3d')
+        ax_pc = fig.add_subplot(339, projection='3d')
 
-        ax_pred.set_aspect('equal')
-        ax_gt.set_aspect('equal')
-        ax_2d.set_aspect('equal')
-        ax_3d.set_aspect('equal')
-        ax_pc.set_aspect('equal')
+        ax_pred_xy.set_aspect('equal')
+        ax_pred_xz.set_aspect('equal')
+        ax_pred_yz.set_aspect('equal')
+        ax_gt_xy.set_aspect('equal')
+        ax_gt_xz.set_aspect('equal')
+        ax_gt_yz.set_aspect('equal')
+        
+        y_hat_bounds = self._get_bounds(y_hat[0, 0])
+        y_bounds = self._get_bounds(y[0, 0])
+        x_bounds = self._get_bounds(x[0, 0])
 
-        ax_pred.set_title('Predicted')
-        ax_gt.set_title('Ground Truth')
-        ax_2d.set_title('2D')
-        ax_3d.set_title('3D')
+        self._set_3d_ax_limits(ax_pred_3d, y_hat_bounds)
+        self._set_3d_ax_limits(ax_gt_3d, y_bounds)
+        self._set_3d_ax_limits(ax_pc, x_bounds)
+
+        ax_pred_xy.set_title('Predicted XY')
+        ax_pred_xz.set_title('Predicted XZ')
+        ax_pred_yz.set_title('Predicted YZ')
+        ax_gt_xy.set_title('GT XY')
+        ax_gt_xz.set_title('GT XZ')
+        ax_gt_yz.set_title('GT YZ')
+        ax_pred_3d.set_title('Predicted 3D')
+        ax_gt_3d.set_title('GT 3D')
         ax_pc.set_title('Point Cloud')
 
-        for p_hat, p in zip(y_hat[0, 0], y[0, 0]):
-            random_color = np.random.rand(3).tolist()
-            ax_pred.plot(p_hat[0], p_hat[1], color=random_color, marker='o')
-            ax_gt.plot(p[0], p[1], color=random_color, marker='o')
-        ax_2d.plot(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], 'bo')
-        ax_2d.plot(y[0, 0, :, 0], y[0, 0, :, 1], 'ro')
-        ax_3d.scatter(y_hat[0, 0, :, 0], y_hat[0, 0, :, 1], y_hat[0, 0, :, 2], 'b')
-        ax_3d.scatter(y[0, 0, :, 0], y[0, 0, :, 1], y[0, 0, :, 2], 'r')
-        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 1], x[0, 0, :, 2], 'g')
+        for i, (p_hat, p) in enumerate(zip(y_hat[0, 0], y[0, 0])):
+            color = JOINT_COLOR_MAP[i]
+            ax_pred_xy.plot(p_hat[0], p_hat[1], color=color, marker='o')
+            ax_pred_xz.plot(p_hat[0], p_hat[2], color=color, marker='o')
+            ax_pred_yz.plot(p_hat[1], p_hat[2], color=color, marker='o')
+            ax_gt_xy.plot(p[0], p[1], color=color, marker='o')
+            ax_gt_xz.plot(p[0], p[2], color=color, marker='o')
+            ax_gt_yz.plot(p[1], p[2], color=color, marker='o')
+            ax_pred_3d.scatter(p_hat[0], p_hat[2], p_hat[1], color=color, marker='o')
+            ax_gt_3d.scatter(p[0], p[2], p[1], color=color, marker='o')
+        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 2], x[0, 0, :, 1], 'g', marker='o')
+
+        fig.tight_layout()
 
         # wandb.log({'keypoints': wandb.Image(fig)})
         tensorboard = self.logger.experiment
@@ -193,113 +219,140 @@ class MeanTeacherLitModel(pl.LightningModule):
         plt.clf()
 
     def _calculate_loss(self, batch):
-        x = batch['point_clouds']
-        y = batch['keypoints']
-        if self.hparams.model_name.lower() == 'p4t' or self.hparams.model_name.lower() == 'p4tda3':
-            y_hat = self.model(x)
-            loss = self.losses['pc'](y_hat, y)
-        elif self.hparams.model_name.lower() == 'p4tda':
-            if self.hparams.mode == 'train':
-                x, s = torch.split(x, [5, 1], dim=-1)
-                y_hat, s_hat, l_rec = self.model(x)
-                l_pc = self.losses['pc'](y_hat, y)
-                # print(s_hat.squeeze().shape, s.squeeze().shape)
-                l_seg = self.losses['seg'](s_hat.permute(0, 2, 1, 3), s.squeeze(-1).long())
-                # print(l_pc, l_seg, l_rec)
-                loss = l_pc + self.hparams.w_seg * l_seg + self.hparams.w_rec * l_rec
-            elif self.hparams.mode == 'adapt':
-                y_ref = batch['ref_keypoints']
-                y_hat, y, l_rec = self.model(x)
-                l_ref = self.losses['ref'](y, y_ref)
-                l_sym = self.losses['sym'](y)
-                loss = self.hparams.w_rec * l_rec + self.hparams.w_ref * l_ref + self.hparams.w_sym * l_sym
-            else:
-                raise ValueError('mode must be train or adapt!')
-        elif self.hparams.model_name.lower() == 'p4tda2':
-            if self.hparams.mode == 'train':
-                x, s = torch.split(x, [5, 1], dim=-1)
-                y_hat, s_hat, l_rec = self.model(x)
-                l_pc = self.losses['pc'](y_hat, y)
-                l_seg = self.losses['seg'](s_hat.permute(0, 2, 1, 3), s.squeeze(-1).long())
-                loss = l_pc + self.hparams.w_seg * l_seg + self.hparams.w_rec * l_rec
-            elif self.hparams.mode == 'adapt':
-                y_ref = batch['ref_keypoints']
-                y_hat, s_hat, l_rec = self.model(x, update_memory=False)
-                # l_ref = self.losses['ref'](y, y_ref)
-                # l_sym = self.losses['sym'](y)
-                # l_ent = self.losses['ent'](s_hat)
-                l_clc = self.losses['clc'](s_hat, x[..., :3])
-                # print(f'l_rec: {torch2numpy(l_rec)}')
-                # print(f'l_rec: {torch2numpy(l_rec)}, l_ent: {torch2numpy(l_ent)}, l_clc: {torch2numpy(l_clc)}')
-                # print(f'l_rec: {torch2numpy(l_rec)}, l_ref: {torch2numpy(l_ref)}, l_sym: {torch2numpy(l_sym)}, l_ent: {torch2numpy(l_ent)}, l_clc: {torch2numpy(l_clc)}')
-                # loss = self.hparams.w_rec * l_rec + self.hparams.w_ent * l_ent + self.hparams.w_clc * l_clc + self.hparams.w_ref * l_ref + self.hparams.w_sym * l_sym
-                loss = self.hparams.w_rec * l_rec + self.hparams.w_clc * l_clc # + self.hparams.w_ref * l_ref
-            else:
-                raise ValueError('mode must be train or adapt!')
-        elif self.hparams.model_name.lower() == 'p4tda4':
-            if self.hparams.mode == 'train':
-                y_hat, l_cls = self.model.forward_train(x)
-                l_pc = self.losses['pc'](y_hat, y)
-                loss = l_pc + self.hparams.w_cls * l_cls
-            elif self.hparams.mode == 'adapt':
-                y_hat, l_cls = self.model.forward_train(x)
-                loss = l_cls
-            else:
-                raise ValueError('mode must be train or adapt!')
-        elif self.hparams.model_name.lower() == 'p4tda5':
-            if self.hparams.mode == 'train':
-                y_hat, l_cls = self.model.forward_train(x, y)
-                l_pc = self.losses['pc'](y_hat, y)
-                loss = l_pc + self.hparams.w_cls * l_cls
-            elif self.hparams.mode == 'adapt':
-                c = batch['centroid']
-                r = batch['radius']
-                s = batch['scale']
-                t = batch['translate']
-                rot = batch['rotation_matrix']
-                x1, x2 = torch.chunk(x, 2, dim=1)
-                # y1, y2 = torch.chunk(y, 2, dim=1)
-                c1, c2 = torch.chunk(c, 2, dim=1)
-                r1, r2 = torch.chunk(r, 2, dim=1)
-                s1, s2 = torch.chunk(s, 2, dim=1)
-                t1, t2 = torch.chunk(t, 2, dim=1)
-                rot1, rot2 = torch.chunk(rot, 2, dim=1)
+        if 'sup' in batch:
+            x = batch['sup']['point_clouds']
+            y = batch['sup']['keypoints']
+        else:
+            x = batch['point_clouds']
+            y = batch['keypoints']
+        if self.hparams.model_name in ['P4Transformer', 'P4TransformerAnchor', 'SPiKE']:
+            if self.hparams.train_dataset['name'] in ['ReferenceDataset'] and self.hparams.ours:
+                batch_sup = batch['sup']
+                batch_unsup = batch['unsup']
 
-                y_hat = self.model.forward_adapt(x1)
-                y_pseudo = self.model_ema.module.forward_adapt(x2)
-                # print(y_hat.shape, t1.shape, rot1.shape, s1.shape, r1.shape, c1.shape)
+                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
+                    x_sup0 = batch_sup['point_clouds'][..., :3]
+                    x_sup1 = batch_sup['point_clouds_trans'][..., :-1, :, :3]
+                    y_sup = batch_sup['keypoints']
+                    xr_sup0 = batch_sup['ref_point_clouds'][..., :3]
+                    yr_sup = batch_sup['ref_keypoints']
+                    x_unsup = batch_unsup['point_clouds'][..., :3]
 
-                y_hat = y_hat - t1.unsqueeze(-2).unsqueeze(-2) # centering
-                y_pseudo = y_pseudo - t2.unsqueeze(-2).unsqueeze(-2) # centering
+                    B = x_sup0.shape[0]
 
-                y_hat = y_hat @ rot1.transpose(-1, -2).unsqueeze(1) # rotation
-                y_pseudo = y_pseudo @ rot2.transpose(-1, -2).unsqueeze(1) # rotation
+                    x_sup0_ = torch.cat((x_sup0, xr_sup0), dim=0)
+                    y_sup_ = torch.cat((y_sup, yr_sup), dim=0)
 
-                y_hat = y_hat / s1.unsqueeze(-2).unsqueeze(-2) # scaling
-                y_pseudo = y_pseudo / s2.unsqueeze(-2).unsqueeze(-2) # scaling
+                    if torch.rand(1).item() < 0.5:
+                        perm = torch.randperm(x_sup0_.shape[-2])
+                        num2exchange = torch.randint(0, x_sup0_.shape[-2], (1,)).item()
+                        x_sup0__ = torch.cat((x_sup0_[:B, ..., perm[:num2exchange], :3], x_sup1[:B, ..., perm[num2exchange:], :3]), dim=-2)
+                        x_sup1[:B] = torch.cat((x_sup1[:B, ..., perm[:num2exchange], :3], x_sup0_[:B, ..., perm[num2exchange:], :3]), dim=-2)
+                        x_sup0_[:B] = x_sup0__
 
-                y_hat = y_hat * r1.unsqueeze(-2).unsqueeze(-2) + c1.unsqueeze(-2).unsqueeze(-2) # unnormalization
-                y_pseudo = y_pseudo * r2.unsqueeze(-2).unsqueeze(-2) + c2.unsqueeze(-2).unsqueeze(-2) # unnormalization
+                    y_sup0_hat, f0 = self.model(x_sup0_)
+                    y_sup1_hat, f1 = self.model(x_sup1)
+
+                    y_hat = y_sup0_hat[:B]
+
+                    loss_sup = F.mse_loss(y_sup0_hat, y_sup_) + F.mse_loss(y_sup1_hat, y_sup)
+                    loss_con = F.mse_loss(f0[:B], f1[:B])
+                else:
+                    x_sup = batch_sup['point_clouds']
+                    y_sup = batch_sup['keypoints']
+                    xr_sup = batch_sup['ref_point_clouds']
+                    yr_sup = batch_sup['ref_keypoints']
+                    x_unsup = batch_unsup['point_clouds']
+
+                    y_sup_hat = self.model(x_sup)
+                    yr_sup_hat = self.model(xr_sup)
+                    y_hat = y_sup_hat
+
+                    loss_sup = F.mse_loss(y_sup_hat, y_sup) + F.mse_loss(yr_sup_hat, yr_sup)
+                    loss_con = 0.0
                 
-                l_cls = self.losses['pc'](y_hat, y_pseudo.detach())
+                x_unsup_t0 = x_unsup[:, :-1, ...]
+                x_unsup_t1 = x_unsup[:, 1:, ...]
 
-                loss = l_cls
+                self.model_ema.module.eval()
+                with torch.no_grad():
+                    y_unsup_t0_pseudo, _ = self.model_ema.module(x_unsup_t0)
+                    y_unsup_t1_pseudo, _ = self.model_ema.module(x_unsup_t1)
+
+                y_unsup_t0_hat, _ = self.model(x_unsup_t0)
+                y_unsup_t1_hat, _ = self.model(x_unsup_t1)
+
+                mask_dist_pos, mask_dist_neg = chamfer_mask(x_unsup, y_unsup_t0_pseudo, y_unsup_t1_pseudo)
+                y_unsup_flow = torch.norm(y_unsup_t1_pseudo - y_unsup_t0_pseudo, p=2, dim=-1).unsqueeze(-1)
+                mask_flow_pos = (y_unsup_flow > 0.1)
+                mask_flow_neg = (y_unsup_flow < 0.05)
+                mask_pos = mask_dist_pos & mask_flow_pos
+                mask_neg = mask_dist_neg & mask_flow_neg
+                mask = mask_pos | mask_neg
+
+                loss_pseudo = F.mse_loss(y_unsup_t0_pseudo * mask, y_unsup_t0_hat * mask) + F.mse_loss(y_unsup_t1_pseudo * mask, y_unsup_t1_hat * mask)
+
+                unsup_loss = self.loss.to(self.device)
+                loss_unsup_dynamic, loss_unsup_static = unsup_loss(x_unsup, y_unsup_t0_hat, y_unsup_t1_hat)
+
+                loss = loss_sup + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static + self.hparams.w_pseudo * loss_pseudo
+                losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static, 'loss_pseudo': loss_pseudo}
+
+            elif self.hparams.train_dataset['name'] in ['ReferenceDataset']:
+                x_ref = batch['ref_point_clouds']
+                y_ref = batch['ref_keypoints']
+
+                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
+                    x_ = batch['point_clouds_trans'][..., :-1, :, :3]
+                    if torch.rand(1).item() < 0.5:
+                        perm = torch.randperm(x_.shape[-2])
+                        num2exchange = torch.randint(0, x_.shape[-2], (1,)).item()
+                        x__ = torch.cat((x[..., perm[:num2exchange], :3], x_[..., perm[num2exchange:], :3]), dim=-2)
+                        x_ = torch.cat((x_[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
+                        x = x__
+                    y_hat = self.model(x)
+                    y_hat_ = self.model(x_)
+                    y_ref_hat = self.model(x_ref)
+                    loss = self.loss(y_hat, y) + self.loss(y_hat_, y) + self.loss(y_ref_hat, y_ref)
+                else:
+                    y_hat = self.model(x)
+                    y_ref_hat = self.model(x_ref)
+                    loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
+                losses = {'loss': loss}
+            elif self.hparams.train_dataset['name'] in ['ReferenceOneToOneDataset']:
+                x_ref = batch['ref_point_clouds']
+                y_ref = batch['ref_keypoints']
+                if torch.rand(1).item() < 0.5:
+                    perm = torch.randperm(x_ref.shape[-2])
+                    num2exchange = torch.randint(0, x_ref.shape[-2], (1,)).item()
+                    x_ = torch.cat((x[..., perm[:num2exchange], :3], x_ref[..., perm[num2exchange:], :3]), dim=-2)
+                    x_ref_ = torch.cat((x_ref[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
+                    x = x_
+                    x_ref = x_ref_
+                y_hat = self.model(x)
+                y_ref_hat = self.model(x_ref)
+                loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
+                losses = {'loss': loss}
             else:
-                raise ValueError('mode must be train or adapt!')
-        # elif self.hparams.model_name.lower() == 'dg':
-        #     l_pos, y_hat = self.model.forward_train(x, y)
-        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-        #     loss = l_pos
-        #     # l_rec_pc, l_rec_skl, l_pos, y_hat = self.model.forward_train(x, y)
-        #     # print(f'l_rec_pc: {torch2numpy(l_rec_pc)}, l_rec_skl: {torch2numpy(l_rec_skl)}, l_pos: {torch2numpy(l_pos)}')
-        #     # loss = self.hparams.w_rec_pc * l_rec_pc + self.hparams.w_rec_skl * l_rec_skl + self.hparams.w_pos * l_pos
-        # elif self.hparams.model_name.lower() == 'dg2':
-        #     l_pos, y_hat = self.model.forward_train(x, y)
-        #     loss = l_pos
+                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
+                    x_ = batch['point_clouds_trans']
+                    if torch.rand(1).item() < 0.5:
+                        perm = torch.randperm(x_.shape[-2])
+                        num2exchange = torch.randint(0, x_.shape[-2], (1,)).item()
+                        x__ = torch.cat((x[..., perm[:num2exchange], :3], x_[..., perm[num2exchange:], :3]), dim=-2)
+                        x_ = torch.cat((x_[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
+                        x = x__
+                    y_hat = self.model(x)
+                    y_hat_ = self.model(x_)
+                    loss = self.loss(y_hat, y) + self.loss(y_hat_, y)
+                else:
+                    y_hat = self.model(x)
+                    loss = self.loss(y_hat, y)
+                losses = {'loss': loss}
         else:
             raise NotImplementedError
         
-        return loss, x, y, y_hat
+        return losses, x, y, y_hat
 
     def _calculate_loss_eval(self, batch):
         x = batch['point_clouds']
