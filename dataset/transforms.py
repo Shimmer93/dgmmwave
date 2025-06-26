@@ -130,8 +130,11 @@ class ConvertToMMWavePointCloud():
         kps0 = sample['keypoints'][:-1]
         kps1 = sample['keypoints'][1:]
         kps_dist = np.linalg.norm(kps0 - kps1, axis=-1)
-        dist_threshold = np.random.rand() * self.max_dist_threshold
+        # print(kps_dist)
+        # dist_threshold = np.random.rand() * self.max_dist_threshold
+        dist_threshold = self.max_dist_threshold
         mask = kps_dist > dist_threshold
+        # print(mask)
 
         new_pcs = []
         for i in range(len(sample['keypoints']) - 1):
@@ -160,8 +163,9 @@ class ConvertToMMWavePointCloud():
         return sample
 
 class ConvertToRefinedMMWavePointCloud():
-    def __init__(self, max_dist_threshold=0.1, add_std=0.1, default_num_points=32, num_noisy_points=32):
+    def __init__(self, max_dist_threshold=0.1, min_dist_threshold=0.05, add_std=0.1, default_num_points=32, num_noisy_points=32):
         self.max_dist_threshold = max_dist_threshold
+        self.min_dist_threshold = min_dist_threshold
         self.add_std = add_std
         self.default_num_points = default_num_points
         self.num_noisy_points = num_noisy_points
@@ -175,7 +179,10 @@ class ConvertToRefinedMMWavePointCloud():
 
         # T, N, _ = point_clouds.shape
         T, J, _ = keypoints.shape
-        flow_thres = np.random.rand() * self.max_dist_threshold
+        # flow_thres = self.max_dist_threshold
+        # flow_thres = np.random.rand() * self.max_dist_threshold
+        # random number between min_dist_threshold and max_dist_threshold
+        flow_thres = np.random.uniform(self.min_dist_threshold, self.max_dist_threshold)
 
         # 1. Calculate keypoint flow (temporal displacement)
         keypoint_flow = keypoints[1:] - keypoints[:-1]  # (T-1, J, 3)

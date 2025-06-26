@@ -16,7 +16,7 @@ from dataset.data_ours_api import OurDataModule
 from model.model_api import LitModel
 from model.model_aux_api import AuxLitModel
 from model.model_f2p_api import F2PLitModel
-# from model.model_ema_api import MeanTeacherLitModel
+from model.model_ema_api import MeanTeacherLitModel
 from misc.utils import load_cfg, merge_args_cfg
 
 def main(args):
@@ -24,10 +24,9 @@ def main(args):
         dm = OurDataModule(hparams=args)
     else:
         dm = LitDataModule(hparams=args)
-    # if args.mean_teacher:
-    #     model = MeanTeacherLitModel(hparams=args)
-    # else:
-    if args.aux:
+    if args.mean_teacher:
+        model = MeanTeacherLitModel(hparams=args)
+    elif args.aux:
         model = AuxLitModel(hparams=args)
         monitor = 'val_loss'
         filename = args.model_name+'-{epoch}-{val_loss:.4f}'

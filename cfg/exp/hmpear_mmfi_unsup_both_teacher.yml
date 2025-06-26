@@ -51,6 +51,7 @@ sched_params:
 # --------------------------------------
 # Model parameters
 # --------------------------------------
+has_teacher: true
 mode: train
 model_name: P4Transformer
 model_params:
@@ -75,9 +76,9 @@ loss_params:
   thres_static: 0.15
   thres_dist: 0.05
 # weight for auxiliary losses
-w_dynamic: 0.01
-w_static: 0.01
-w_con: 0
+w_dynamic: 0
+w_static: 0
+w_pseudo: 0.1
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -126,8 +127,8 @@ train_pipeline: &train_pipeline
   #     max_dist_threshold: 0
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.03
-      min_dist_threshold: 0.005
+      max_dist_threshold: 0.025
+      min_dist_threshold: 0
   - name: RandomScale
     params:
       scale_min: 0.9

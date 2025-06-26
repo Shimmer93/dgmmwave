@@ -103,6 +103,9 @@ class LitModel(pl.LightningModule):
             self.reg_dir.requires_grad_(False)
             self.reg_motion.requires_grad_(False)
 
+        if hasattr(hparams, 'has_teacher') and hparams.has_teacher:
+            self.model_teacher = create_model(hparams.model_name, hparams.model_params)
+
     def _recover_point_cloud(self, x, center, radius):
         x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
         x = torch2numpy(x)
@@ -202,7 +205,65 @@ class LitModel(pl.LightningModule):
             x = batch['point_clouds']
             y = batch['keypoints']
         if self.hparams.model_name in ['P4Transformer', 'P4TransformerAnchor', 'SPiKE']:
-            if self.hparams.train_dataset['name'] in ['ReferenceDataset'] and self.hparams.ours:
+            if hasattr(self.hparams, 'has_teacher') and self.hparams.has_teacher:
+                batch_sup = batch['sup']
+                batch_unsup = batch['unsup']
+
+                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
+                    x_sup_li = batch_sup['point_clouds'][..., :3]
+                    x_sup_mm = batch_sup['point_clouds_trans'][..., :-1, :, :3]
+                    y_sup = batch_sup['keypoints']
+                    xr_sup_mm = batch_sup['ref_point_clouds'][..., :3]
+                    yr_sup = batch_sup['ref_keypoints']
+                    x_unsup = batch_unsup['point_clouds'][..., :3]
+
+                    B = x_sup_li.shape[0]
+
+                    # if torch.rand(1).item() < 0.5:
+                    #     perm = torch.randperm(x_sup_li.shape[-2])
+                    #     num2exchange = torch.randint(0, x_sup_li.shape[-2]//2, (1,)).item()
+                    #     x_sup_li_ = torch.cat((x_sup_li[:B, ..., perm[:num2exchange], :3], x_sup_mm[:B, ..., perm[num2exchange:], :3]), dim=-2)
+                    #     x_sup_mm = torch.cat((x_sup_mm[:B, ..., perm[:num2exchange], :3], x_sup_li[:B, ..., perm[num2exchange:], :3]), dim=-2)
+                    #     x_sup_li = x_sup_li_
+
+                    y_sup_li_hat, _ = self.model_teacher(x_sup_li)
+                    y_sup_mm_hat, _ = self.model(x_sup_mm)
+                    yr_sup_mm_hat, _ = self.model(xr_sup_mm)
+
+                    y_hat = y_sup_mm_hat[:B]
+                    loss_sup = F.mse_loss(y_sup_mm_hat, y_sup) + F.mse_loss(y_sup_li_hat, y_sup) + F.mse_loss(yr_sup_mm_hat, yr_sup)
+
+                else:
+                    x_sup = batch_sup['point_clouds']
+                    y_sup = batch_sup['keypoints']
+                    xr_sup = batch_sup['ref_point_clouds']
+                    yr_sup = batch_sup['ref_keypoints']
+                    x_unsup = batch_unsup['point_clouds']
+
+                    y_sup_hat = self.model_teacher(x_sup)
+                    yr_sup_hat = self.model(xr_sup)
+                    y_hat = y_sup_hat
+
+                    loss_sup = F.mse_loss(y_sup_hat, y_sup) + F.mse_loss(yr_sup_hat, yr_sup)
+                
+                x_unsup_t0 = x_unsup[:, :-1, ...]
+                x_unsup_t1 = x_unsup[:, 1:, ...]
+
+                with torch.no_grad():
+                    y_unsup_t0_pseudo, _ = self.model_teacher(x_unsup_t0 + torch.randn_like(x_unsup_t0) * 0.05)
+                    y_unsup_t1_pseudo, _ = self.model_teacher(x_unsup_t1 + torch.randn_like(x_unsup_t0) * 0.05)
+
+                y_unsup_t0_hat, _ = self.model(x_unsup_t0)
+                y_unsup_t1_hat, _ = self.model(x_unsup_t1)
+
+                loss_pseudo = F.mse_loss(y_unsup_t0_hat, y_unsup_t0_pseudo.detach()) + F.mse_loss(y_unsup_t1_hat, y_unsup_t1_pseudo.detach())
+
+                unsup_loss = self.loss.to(self.device)
+                loss_unsup_dynamic, loss_unsup_static = unsup_loss(x_unsup, y_unsup_t0_hat, y_unsup_t1_hat)
+
+                loss = loss_sup + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static + self.hparams.w_pseudo * loss_pseudo
+                losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static, 'loss_pseudo': loss_pseudo}
+            elif self.hparams.train_dataset['name'] in ['ReferenceDataset'] and self.hparams.ours:
                 batch_sup = batch['sup']
                 batch_unsup = batch['unsup']
 
@@ -832,6 +893,10 @@ class LitModel(pl.LightningModule):
         return super().on_predict_end()
 
     def configure_optimizers(self):
-        optimizer = create_optimizer(self.hparams.optim_name, self.hparams.optim_params, self.model.parameters())
-        scheduler = create_scheduler(self.hparams.sched_name, self.hparams.sched_params, optimizer)
+        if hasattr(self.hparams, 'has_teacher') and self.hparams.has_teacher:
+            optimizer = create_optimizer(self.hparams.optim_name, self.hparams.optim_params, list(self.model.parameters()) + list(self.model_teacher.parameters()))
+            scheduler = create_scheduler(self.hparams.sched_name, self.hparams.sched_params, optimizer)
+        else:
+            optimizer = create_optimizer(self.hparams.optim_name, self.hparams.optim_params, self.model.parameters())
+            scheduler = create_scheduler(self.hparams.sched_name, self.hparams.sched_params, optimizer)
         return [optimizer], [scheduler]
