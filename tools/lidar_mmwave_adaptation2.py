@@ -151,7 +151,7 @@ def adapt(data_a, data_b, neighbors=NEIGHBORS):
                 max_pc = all_pcs_b[max_sim_idx[k]] # [q, 3+1]
                 max_kp = all_kps_b[max_sim_idx[k], j, 0, :3] # [3]
                 kp = kps_a[k, j, :3] # [3]
-                max_pc_j = max_pc[max_pc[:, -1] == j]
+                max_pc_j = max_pc[max_pc[:, -1] == j+1]
                 pc_new = max_pc_j[:, :3] - max_kp[None, :] + kp[None, :]
                 pcs_new[k].append(pc_new) # remove the joint index
 

@@ -11,14 +11,15 @@ epochs: &epochs 100
 train_dataset:
   name: TemporalDataset
   params:
-    data_path: &data_path data/lidarhuman26m_mm_mmbody.pkl
+    data_path: &data_path data/lidarhuman26m_mm_mmbody3.pkl
     split: [train, val]
-    # trans: true
+    trans: true
 val_dataset:
   name: TemporalDataset
   params:
     data_path: *data_path
     split: test
+    trans: true
 test_dataset:
   name: TemporalDataset
   params:

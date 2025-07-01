@@ -11,7 +11,7 @@ epochs: &epochs 100
 train_dataset:
   name: TemporalDataset
   params:
-    data_path: &data_path data/lidarhuman26m_mm_mmbody.pkl
+    data_path: &data_path data/lidarhuman26m_mm_mmbody3.pkl
     split: [train, val]
     both: true
     # trans: true
@@ -20,6 +20,7 @@ val_dataset:
   params:
     data_path: *data_path
     split: test
+    trans: true
 test_dataset:
   name: TemporalDataset
   params:
@@ -108,7 +109,8 @@ train_pipeline:
   #   params: null
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.025
+      max_dist_threshold: 0.1
+      min_dist_threshold: 0
   - name: RandomScale
     params:
       scale_min: 0.9

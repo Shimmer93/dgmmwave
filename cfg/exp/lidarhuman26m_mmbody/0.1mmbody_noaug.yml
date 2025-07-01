@@ -11,10 +11,10 @@ epochs: &epochs 100
 train_dataset:
   name: ReferenceDataset
   params:
-    data_path: &data_path data/lidarhuman26m_mm_mmbody.pkl
+    data_path: &data_path data/lidarhuman26m_mm_mmbody3.pkl
     split: [train, val]
-    ref_data_path: data/mmbody.pkl
-    ref_split: [train, val]
+    ref_data_path: data/mmfi.pkl
+    ref_split: [train_rdn_p3, val_rdn_p3]
     ref_ratio: 0.1
     # trans: true
 val_dataset:

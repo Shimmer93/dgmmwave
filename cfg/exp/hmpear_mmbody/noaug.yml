@@ -11,7 +11,7 @@ epochs: &epochs 100
 train_dataset:
   name: TemporalDataset
   params:
-    data_path: &data_path data/hmpear_mm_mmbody.pkl
+    data_path: &data_path data/hmpear_mm_mmbody3.pkl
     split: [train, val]
     # trans: true
 val_dataset:
