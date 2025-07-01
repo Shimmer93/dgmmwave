@@ -24,6 +24,22 @@ def create_model(model_name, model_params):
     model = model_class(**model_params)
     return model
 
+def chamfer_mask(x, y_hat0, y_hat1, thres_static=0.2, thres_dist=0.1):
+    # x: B T N C
+    # y_hat0: B 1 J 3
+    # y_hat1: B 1 J 3
+
+    x_t01 = x[:, -2:, ...]
+    x_t0 = x_t01[:, 0:1, :, :3]  # B 1 N 3
+    x_t1 = x_t01[:, 1:2, :, :3]  # B 1 N 3
+
+    chamfer_dist = ChamferDistance()
+    dist1, dist2 = chamfer_dist(x_t0[:, 0].to(torch.float), y_hat0[:, 0].to(torch.float))
+
+    mask_dist_pos = (dist2 < thres_dist).unsqueeze(1).unsqueeze(-1).detach()  # B 1 J 1
+    mask_dist_neg = (dist2 > thres_static).unsqueeze(1).unsqueeze(-1).detach()  # B 1 J 1
+    return mask_dist_pos, mask_dist_neg
+
 class UnsupLoss(torch.nn.Module):
     def __init__(self, thres_static=0.2, thres_dist=0.1):
         super().__init__()
@@ -36,20 +52,13 @@ class UnsupLoss(torch.nn.Module):
         # y_hat0: B 1 J 3
         # y_hat1: B 1 J 3
 
-        x_t01 = x[:, -2:, ...]
-        # m_hat = self.model(x_t01)
-        x_t0 = x_t01[:, 0:1, :, :3]  # B 1 N 3
-        x_t1 = x_t01[:, 1:2, :, :3]  # B 1 N 3
-
-        dist1, dist2 = self.chamfer_dist(x_t0[:, 0].to(torch.float), y_hat0[:, 0].to(torch.float))
-        # loss_dynamic = dist2[dist2 < self.thres_dist].mean()
-        mask_dist_pos = (dist2 < self.thres_dist).unsqueeze(1).unsqueeze(-1).detach()  # B 1 J 1
+        mask_dist_pos, mask_dist_neg = chamfer_mask(x, y_hat0, y_hat1, self.thres_static, self.thres_dist)
+        
         my_hat_dynamic = (y_hat1 - y_hat0) * mask_dist_pos
         my_norm_hat_dynamic = torch.norm(my_hat_dynamic, p=2, dim=-1)
         my_norm_hat_dynamic = my_norm_hat_dynamic[my_norm_hat_dynamic > 0]
         loss_dynamic = torch.relu(0.05 - my_norm_hat_dynamic).mean()
         
-        mask_dist_neg = (dist2 > self.thres_static).unsqueeze(1).unsqueeze(-1).detach()  # B 1 J 1
         my_hat_static = (y_hat1 - y_hat0) * mask_dist_neg
         my_hat_static = my_hat_static[my_hat_static > 0]
         loss_static = F.mse_loss(my_hat_static, torch.zeros_like(my_hat_static))
@@ -221,17 +230,19 @@ class LitModel(pl.LightningModule):
 
                     # if torch.rand(1).item() < 0.5:
                     #     perm = torch.randperm(x_sup_li.shape[-2])
-                    #     num2exchange = torch.randint(0, x_sup_li.shape[-2]//2, (1,)).item()
+                    #     num2exchange = torch.randint(0, x_sup_li.shape[-2], (1,)).item()
                     #     x_sup_li_ = torch.cat((x_sup_li[:B, ..., perm[:num2exchange], :3], x_sup_mm[:B, ..., perm[num2exchange:], :3]), dim=-2)
                     #     x_sup_mm = torch.cat((x_sup_mm[:B, ..., perm[:num2exchange], :3], x_sup_li[:B, ..., perm[num2exchange:], :3]), dim=-2)
                     #     x_sup_li = x_sup_li_
 
-                    y_sup_li_hat, _ = self.model_teacher(x_sup_li)
-                    y_sup_mm_hat, _ = self.model(x_sup_mm)
-                    yr_sup_mm_hat, _ = self.model(xr_sup_mm)
+                    y_sup_mm_hat, _ = self.model_teacher(x_sup_mm)
+                    yr_sup_mm_hat, _ = self.model_teacher(xr_sup_mm)
+                    y_sup_li_hat, _ = self.model(x_sup_li)
+                    yr_sup_mm_hat2, _ = self.model(xr_sup_mm)
 
                     y_hat = y_sup_mm_hat[:B]
-                    loss_sup = F.mse_loss(y_sup_mm_hat, y_sup) + F.mse_loss(y_sup_li_hat, y_sup) + F.mse_loss(yr_sup_mm_hat, yr_sup)
+                    loss_sup = F.mse_loss(y_sup_mm_hat, y_sup) + F.mse_loss(y_sup_li_hat, y_sup) + \
+                               F.mse_loss(yr_sup_mm_hat, yr_sup) + F.mse_loss(yr_sup_mm_hat2, yr_sup)
 
                 else:
                     x_sup = batch_sup['point_clouds']
@@ -250,13 +261,26 @@ class LitModel(pl.LightningModule):
                 x_unsup_t1 = x_unsup[:, 1:, ...]
 
                 with torch.no_grad():
-                    y_unsup_t0_pseudo, _ = self.model_teacher(x_unsup_t0 + torch.randn_like(x_unsup_t0) * 0.05)
-                    y_unsup_t1_pseudo, _ = self.model_teacher(x_unsup_t1 + torch.randn_like(x_unsup_t0) * 0.05)
+                    y_unsup_t0_pseudo, _ = self.model_teacher(x_unsup_t0)
+                    y_unsup_t1_pseudo, _ = self.model_teacher(x_unsup_t1)
 
                 y_unsup_t0_hat, _ = self.model(x_unsup_t0)
                 y_unsup_t1_hat, _ = self.model(x_unsup_t1)
 
-                loss_pseudo = F.mse_loss(y_unsup_t0_hat, y_unsup_t0_pseudo.detach()) + F.mse_loss(y_unsup_t1_hat, y_unsup_t1_pseudo.detach())
+                # loss_pseudo = F.mse_loss(y_unsup_t0_hat, y_unsup_t0_pseudo.detach()) + F.mse_loss(y_unsup_t1_hat, y_unsup_t1_pseudo.detach())
+                # mask_dist_pos, mask_dist_neg = chamfer_mask(x_unsup, y_unsup_t0_pseudo, y_unsup_t1_pseudo)
+                # y_unsup_flow = torch.norm(y_unsup_t1_pseudo - y_unsup_t0_pseudo, p=2, dim=-1).unsqueeze(-1)
+                # mask_flow_pos = (y_unsup_flow > 0.05)
+                # mask_flow_neg = (y_unsup_flow < 0.01)
+                # mask_pos = mask_dist_pos & mask_flow_pos
+                # mask_neg = mask_dist_neg & mask_flow_neg
+                # print(f"mask_pos: {mask_pos.sum()} / {mask_pos.numel()}, mask_neg: {mask_neg.sum()} / {mask_neg.numel()}")
+                # mask = (mask_pos | mask_neg).detach()
+
+                loss_pseudo = F.mse_loss(y_unsup_t0_hat, y_unsup_t0_pseudo.detach()) + \
+                              F.mse_loss(y_unsup_t1_hat, y_unsup_t1_pseudo.detach())
+                # loss_pseudo = F.mse_loss(y_unsup_t0_hat * mask, y_unsup_t0_pseudo.detach() * mask) + \
+                #               F.mse_loss(y_unsup_t1_hat * mask, y_unsup_t1_pseudo.detach() * mask)
 
                 unsup_loss = self.loss.to(self.device)
                 loss_unsup_dynamic, loss_unsup_static = unsup_loss(x_unsup, y_unsup_t0_hat, y_unsup_t1_hat)
@@ -339,8 +363,8 @@ class LitModel(pl.LightningModule):
                     y_ref_hat = self.model(x_ref)
                     loss = self.loss(y_hat, y) + self.loss(y_hat_, y) + self.loss(y_ref_hat, y_ref)
                 else:
-                    y_hat = self.model(x)
-                    y_ref_hat = self.model(x_ref)
+                    y_hat, _ = self.model(x)
+                    y_ref_hat, _ = self.model(x_ref)
                     loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
                 losses = {'loss': loss}
             elif self.hparams.train_dataset['name'] in ['ReferenceOneToOneDataset']:
@@ -540,6 +564,10 @@ class LitModel(pl.LightningModule):
     def _evaluate(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
+        # if hasattr(self.hparams, 'has_teacher') and self.hparams.has_teacher:
+        #     y_hat0, _ = self.model(x)
+        #     y_hat1, _ = self.model_teacher(x)
+        #     y_hat = (y_hat0 + y_hat1) / 2
         if self.hparams.model_name in ['P4TransformerFlow']:
             y_hat, pose_hat, loc_hat, flow_hat = self.model(x[:, :-1, ...])
             accum_flow_hat = torch.cumsum(flow_hat, dim=1)

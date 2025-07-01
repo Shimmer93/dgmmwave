@@ -11,7 +11,7 @@ epochs: &epochs 100
 train_dataset:
   name: ReferenceDataset
   params:
-    data_path: &data_path data/hmpear_mm_mmfi2.pkl
+    data_path: &data_path data/hmpear_mm_mmfi5.pkl
     split: [train, val]
     ref_data_path: data/mmfi.pkl
     ref_split: [train_rdn_p3, val_rdn_p3]
@@ -25,8 +25,9 @@ unsup_dataset:
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: data/hmpear_mm_mmfi2.pkl
+    data_path: data/hmpear_mm_mmfi5.pkl
     split: test
+    trans: true
 test_dataset:
   name: TemporalDataset
   params:
@@ -75,8 +76,8 @@ loss_params:
   thres_static: 0.15
   thres_dist: 0.05
 # weight for auxiliary losses
-w_dynamic: 0.01
-w_static: 0.01
+w_dynamic: 0 #0.01
+w_static: 0 #0.01
 w_con: 0
 # --------------------------------------
 # Augmentation parameters
@@ -109,9 +110,8 @@ train_pipeline: &train_pipeline
   - name: AddNoisyPoints
     params:
       add_std: 0.2
-      num_added: 32
+      num_added: 16
       zero_centered: false
-    prob: 0.5
     ori_key: point_clouds
     more_keys: [point_clouds_trans]
   # - name: DropPointsAtSegmentedJoints
@@ -126,8 +126,8 @@ train_pipeline: &train_pipeline
   #     max_dist_threshold: 0
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.03
-      min_dist_threshold: 0.005
+      max_dist_threshold: 0.025
+      min_dist_threshold: 0
   - name: RandomScale
     params:
       scale_min: 0.9

@@ -11,7 +11,7 @@ epochs: &epochs 100
 train_dataset:
   name: ReferenceDataset
   params:
-    data_path: &data_path data/hmpear_mm_mmfi2.pkl
+    data_path: &data_path data/hmpear_mm_mmfi5.pkl
     split: [train, val]
     ref_data_path: data/mmfi.pkl
     ref_split: [train_rdn_p3, val_rdn_p3]
@@ -25,7 +25,7 @@ unsup_dataset:
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: data/hmpear_mm_mmfi2.pkl
+    data_path: data/mmbody.pkl
     split: test
 test_dataset:
   name: TemporalDataset
@@ -76,8 +76,8 @@ loss_params:
   thres_static: 0.15
   thres_dist: 0.05
 # weight for auxiliary losses
-w_dynamic: 0
-w_static: 0
+w_dynamic: 0.1
+w_static: 0.1
 w_pseudo: 0.1
 # --------------------------------------
 # Augmentation parameters
@@ -127,7 +127,7 @@ train_pipeline: &train_pipeline
   #     max_dist_threshold: 0
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.025
+      max_dist_threshold: 0.1
       min_dist_threshold: 0
   - name: RandomScale
     params:
@@ -177,8 +177,8 @@ val_pipeline: &val_pipeline
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-  # - name: ToITOP
-  #   params: null
+  - name: ToITOP
+    params: null
   - name: Normalize
     params:
       feat_scale: null
@@ -227,4 +227,32 @@ test_pipeline: &test_pipeline
   - name: ToTensor
     params: null
 ref_pipeline: *test_pipeline
-unsup_pipeline: *test_pipeline
+unsup_pipeline:
+  - name: UniformSample
+    params:
+      pad_type: 'start'
+      clip_len: 6
+  - name: GetCentroid
+    params: 
+      centroid_type: 'kps'
+  - name: ToITOP
+    params: null
+  # - name: MultiFrameAggregate
+  #   params:
+  #     num_frames: 3
+  - name: Normalize
+    params:
+      feat_scale: null
+  - name: RemoveOutliers
+    params: 
+      outlier_type: 'box'
+      radius: 1.5
+  - name: ReduceKeypointLen
+    params:
+      only_one: false
+      indexs_to_keep: [4, 5]
+  - name: Pad
+    params:
+      max_len: 256
+  - name: ToTensor
+    params: null
