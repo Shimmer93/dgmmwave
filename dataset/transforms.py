@@ -395,7 +395,10 @@ class Pad():
     def __call__(self, sample):
         for i in range(len(sample['point_clouds'])):
             cur_len = sample['point_clouds'][i].shape[0]
-            if cur_len >= self.max_len:
+            if cur_len == 0:
+                # add random points if the point cloud is empty
+                sample['point_clouds'][i] = np.random.normal(0, 1, (self.max_len, sample['point_clouds'][i].shape[1]))
+            elif cur_len >= self.max_len:
                 indices = np.random.choice(cur_len, self.max_len, replace=False)
                 sample['point_clouds'][i] = sample['point_clouds'][i][indices]
             else:

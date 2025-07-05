@@ -73,7 +73,7 @@ model_params:
 # --------------------------------------
 loss_name: UnsupLoss
 loss_params:
-  thres_static: 0.15
+  thres_static: 0.2
   thres_dist: 0.05
 # weight for auxiliary losses
 w_dynamic: 0.1
