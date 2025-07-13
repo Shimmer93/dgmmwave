@@ -52,6 +52,7 @@ sched_params:
 # Model parameters
 # --------------------------------------
 has_teacher: true
+# teacher_checkpoint_path: /home/zpengac/mmwave/dgmmwave/logs/hmpear_mmfi_unsup_both_teacher/20250701_161111/P4Transformer-epoch=46-val_mpjpe=0.1528.ckpt
 mode: train
 model_name: P4Transformer
 model_params:
@@ -73,7 +74,7 @@ model_params:
 # --------------------------------------
 loss_name: UnsupLoss
 loss_params:
-  thres_static: 0.2
+  thres_static: 0.15
   thres_dist: 0.05
 # weight for auxiliary losses
 w_dynamic: 0.1
@@ -113,8 +114,6 @@ train_pipeline: &train_pipeline
       num_added: 32
       zero_centered: false
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   # - name: DropPointsAtSegmentedJoints
   #   params:
   #     max_num2drop: 14
@@ -163,8 +162,6 @@ train_pipeline: &train_pipeline
     params:
       jitter_std: 0.05
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: ToTensor
     params: null
     ori_key: point_clouds

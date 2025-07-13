@@ -114,6 +114,14 @@ class LitModel(pl.LightningModule):
 
         if hasattr(hparams, 'has_teacher') and hparams.has_teacher:
             self.model_teacher = create_model(hparams.model_name, hparams.model_params)
+            if hasattr(hparams, 'teacher_checkpoint_path') and hparams.teacher_checkpoint_path is not None:
+                from collections import OrderedDict
+                state_dict = torch.load(hparams.teacher_checkpoint_path, map_location=self.device)['state_dict']
+                teacher_state_dict = OrderedDict()
+                for k, v in state_dict.items():
+                    if k.startswith('model_teacher.'):
+                        teacher_state_dict[k[len('model_teacher.'):]] = v
+                self.model_teacher.load_state_dict(teacher_state_dict, strict=False)
 
     def _recover_point_cloud(self, x, center, radius):
         x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
@@ -231,9 +239,9 @@ class LitModel(pl.LightningModule):
                     # if torch.rand(1).item() < 0.5:
                     #     perm = torch.randperm(x_sup_li.shape[-2])
                     #     num2exchange = torch.randint(0, x_sup_li.shape[-2], (1,)).item()
-                    #     x_sup_li_ = torch.cat((x_sup_li[:B, ..., perm[:num2exchange], :3], x_sup_mm[:B, ..., perm[num2exchange:], :3]), dim=-2)
-                    #     x_sup_mm = torch.cat((x_sup_mm[:B, ..., perm[:num2exchange], :3], x_sup_li[:B, ..., perm[num2exchange:], :3]), dim=-2)
-                    #     x_sup_li = x_sup_li_
+                    #     x_sup_li = torch.cat((x_sup_li[:B, ..., perm[:num2exchange], :3], x_sup_mm[:B, ..., perm[num2exchange:], :3]), dim=-2)
+                        # x_sup_mm = torch.cat((x_sup_mm[:B, ..., perm[:num2exchange], :3], x_sup_li[:B, ..., perm[num2exchange:], :3]), dim=-2)
+                        # x_sup_li = x_sup_li_
 
                     y_sup_mm_hat = self.model_teacher(x_sup_mm)
                     yr_sup_mm_hat = self.model_teacher(xr_sup_mm)
@@ -241,8 +249,11 @@ class LitModel(pl.LightningModule):
                     yr_sup_mm_hat2 = self.model(xr_sup_mm)
 
                     y_hat = y_sup_mm_hat[:B]
-                    loss_sup = F.mse_loss(y_sup_mm_hat, y_sup) + F.mse_loss(y_sup_li_hat, y_sup) + \
-                               F.mse_loss(yr_sup_mm_hat, yr_sup) + F.mse_loss(yr_sup_mm_hat2, yr_sup)
+                    if hasattr(self.hparams, 'teacher_checkpoint_path') and self.hparams.teacher_checkpoint_path is not None:
+                        loss_sup = F.mse_loss(y_sup_li_hat, y_sup) + F.mse_loss(yr_sup_mm_hat2, yr_sup)
+                    else:
+                        loss_sup = F.mse_loss(y_sup_mm_hat, y_sup) + F.mse_loss(y_sup_li_hat, y_sup) + \
+                                F.mse_loss(yr_sup_mm_hat, yr_sup) + F.mse_loss(yr_sup_mm_hat2, yr_sup)
 
                 else:
                     x_sup = batch_sup['point_clouds']
@@ -255,7 +266,10 @@ class LitModel(pl.LightningModule):
                     yr_sup_hat = self.model(xr_sup)
                     y_hat = y_sup_hat
 
-                    loss_sup = F.mse_loss(y_sup_hat, y_sup) + F.mse_loss(yr_sup_hat, yr_sup)
+                    if hasattr(self.hparams, 'teacher_checkpoint_path') and self.hparams.teacher_checkpoint_path is not None:
+                        loss_sup = F.mse_loss(yr_sup_hat, yr_sup)
+                    else:
+                        loss_sup = F.mse_loss(y_sup_hat, y_sup) + F.mse_loss(yr_sup_hat, yr_sup)
                 
                 x_unsup_t0 = x_unsup[:, :-1, ...]
                 x_unsup_t1 = x_unsup[:, 1:, ...]

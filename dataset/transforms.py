@@ -182,7 +182,7 @@ class ConvertToRefinedMMWavePointCloud():
         # flow_thres = self.max_dist_threshold
         # flow_thres = np.random.rand() * self.max_dist_threshold
         # random number between min_dist_threshold and max_dist_threshold
-        flow_thres = np.random.uniform(self.min_dist_threshold, self.max_dist_threshold)
+        flow_thres = self.max_dist_threshold
 
         # 1. Calculate keypoint flow (temporal displacement)
         keypoint_flow = keypoints[1:] - keypoints[:-1]  # (T-1, J, 3)
@@ -212,12 +212,14 @@ class ConvertToRefinedMMWavePointCloud():
             weights_expanded = weights_normalized[:, :, np.newaxis]  # (N, J, 1)
             pcf = (weights_expanded * kpf_expanded).sum(axis=1)  # (N, 3)
             pcf = np.linalg.norm(pcf, axis=-1)  # (N,)
+            prob = np.clip(pcf / flow_thres, 0, 1)  # (N,)
             # print(f'Point cloud flow at time {t}: {np.mean(pcf):.4f} ± {np.std(pcf):.4f}, min: {np.min(pcf):.4f}, max: {np.max(pcf):.4f}')
 
             # 4. Filter points based on flow threshold
-            mask = pcf > flow_thres  # (N,)
+            mask = np.random.rand(pc.shape[0]) < prob  # (N,)
+            # mask = pcf > flow_thres  # (N,)
             # print(np.sum(mask), np.any(mask))
-            # print(f'{np.sum(mask)} / {pc.shape[0]} points above flow threshold {flow_thres:.4f} at time {t}')
+            # print(f'{np.sum(mask)} / {pc.shape[0]} points at time {t}')
             if np.any(mask):
                 new_pc = pc[mask]
             else:

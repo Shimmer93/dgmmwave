@@ -106,8 +106,6 @@ train_pipeline:
       num_added: 32
       zero_centered: false
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   # - name: GenerateSegmentationGroundTruth
   #   params: null
   - name: ConvertToRefinedMMWavePointCloud
@@ -148,8 +146,6 @@ train_pipeline:
     params:
       jitter_std: 0.05
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: ToTensor
     params: null
     ori_key: point_clouds
