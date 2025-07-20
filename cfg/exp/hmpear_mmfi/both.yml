@@ -107,8 +107,8 @@ train_pipeline:
   #   params: null
   - name: ConvertToRefinedMMWavePointCloud
     params:
+      max_dist_threshold: 0.2
       max_dist_threshold: 0.1
-      min_dist_threshold: 0
   - name: RandomScale
     params:
       scale_min: 0.9

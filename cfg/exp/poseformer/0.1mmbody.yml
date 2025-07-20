@@ -9,29 +9,22 @@ epochs: &epochs 100
 # Dataset parameters
 # --------------------------------------
 train_dataset:
-  name: ReferenceDataset
-  params:
-    data_path: &data_path data/hmpear_mm_mmfi5.pkl
-    split: [train, val]
-    ref_data_path: data/mmfi.pkl
-    ref_split: [train_rdn_p3, val_rdn_p3]
-    ref_ratio: 0.1
-    both: true
-unsup_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmfi.pkl
-    split: [train_rdn_p3, val_rdn_p3]
+    data_path: &data_path data/mmbody.pkl
+    split: [train, val]
+    ratio: 0.1
+    # trans: true
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
+    data_path: *data_path
     split: test
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
-    split: test
+    data_path: data/mmfi.pkl
+    split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -51,124 +44,91 @@ sched_params:
 # --------------------------------------
 # Model parameters
 # --------------------------------------
-has_teacher: true
 mode: train
-model_name: P4Transformer
+model_name: PoseTransformer
 model_params:
-  radius: 0.7
-  nsamples: 32
-  spatial_stride: 8
-  temporal_kernel_size: 3
-  temporal_stride: 1
-  emb_relu: false
-  dim: 1024
-  depth: 5
-  heads: 8
-  dim_head: 128
-  mlp_dim: 2048
-  output_dim: 45
-  features: 1
+  num_frame: 5
+  num_joints: 15
+  num_input_dims: 64
+  in_chans: 3
+  embed_dim_ratio: 32
+  depth: 4
+  num_heads: 8
+  mlp_ratio: 2.0
+  qkv_bias: true
+  qk_scale: None
+  drop_rate: 0
+  attn_drop_rate: 0
+  drop_path_rate: 0.1
+  norm_layer: None
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
-loss_name: UnsupLoss
-loss_params:
-  thres_static: 0.15
-  thres_dist: 0.05
+loss_name: MSELoss
+loss_params: null
 # weight for auxiliary losses
-w_dynamic: 0.1
-w_static: 0.01
-w_pseudo: 0.1
+w_rec: 0.001
+w_mem: 0.001
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
-train_pipeline: &train_pipeline
+train_pipeline:
   - name: UniformSample
     params: 
       pad_type: 'start'
-      clip_len: 6
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
+      clip_len: 5
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: Normalize
     params:
       feat_scale: null
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
-  # - name: ToITOP
-  #   params: null
+  - name: ToITOP
+    params: null
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
       radius: 1.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: AddNoisyPoints
     params:
       add_std: 0.2
       num_added: 32
       zero_centered: false
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
-  # - name: DropPointsAtSegmentedJoints
-  #   params:
-  #     max_num2drop: 14
-  #   prob: 0.9
   # - name: GenerateSegmentationGroundTruth
+  #   params: null
+  # - name: ConvertToRefinedMMWavePointCloud
   #   params:
-  #     padding: 0.2
-  # - name: ConvertToMMWavePointCloud
-  #   params:
-  #     max_dist_threshold: 0
-  - name: ConvertToRefinedMMWavePointCloud
-    params:
-      max_dist_threshold: 0.2
-      max_dist_threshold: 0.1
+  #     max_dist_threshold: 0.025
   - name: RandomScale
     params:
       scale_min: 0.9
       scale_max: 1.1
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: RandomRotate
     params:
       deg: true
       angle_min: -10
       angle_max: 10
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: RandomTranslate
     params:
       translate_range: 0.01
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: ReduceKeypointLen
     params:
-      only_one: false
-      indexs_to_keep: [4]
+      only_one: true
+      keep_type: 'end'
+      frame_to_reduce: 0
   - name: Pad
     params:
       max_len: 256
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: RandomJitter
     params:
       jitter_std: 0.05
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: ToTensor
     params: null
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
 val_pipeline: &val_pipeline
   - name: UniformSample
     params:
@@ -221,36 +181,6 @@ test_pipeline: &test_pipeline
       only_one: true
       keep_type: 'end'
       frame_to_reduce: 0
-  - name: Pad
-    params:
-      max_len: 256
-  - name: ToTensor
-    params: null
-ref_pipeline: *test_pipeline
-unsup_pipeline:
-  - name: UniformSample
-    params:
-      pad_type: 'start'
-      clip_len: 6
-  - name: GetCentroid
-    params: 
-      centroid_type: 'kps'
-  - name: ToITOP
-    params: null
-  # - name: MultiFrameAggregate
-  #   params:
-  #     num_frames: 3
-  - name: Normalize
-    params:
-      feat_scale: null
-  - name: RemoveOutliers
-    params: 
-      outlier_type: 'box'
-      radius: 1.5
-  - name: ReduceKeypointLen
-    params:
-      only_one: false
-      indexs_to_keep: [4, 5]
   - name: Pad
     params:
       max_len: 256

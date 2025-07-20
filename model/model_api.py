@@ -221,7 +221,7 @@ class LitModel(pl.LightningModule):
         else:
             x = batch['point_clouds']
             y = batch['keypoints']
-        if self.hparams.model_name in ['P4Transformer', 'P4TransformerAnchor', 'SPiKE']:
+        if self.hparams.model_name in ['P4Transformer', 'P4TransformerAnchor', 'SPiKE', 'PoseTransformer']:
             if hasattr(self.hparams, 'has_teacher') and self.hparams.has_teacher:
                 batch_sup = batch['sup']
                 batch_unsup = batch['unsup']

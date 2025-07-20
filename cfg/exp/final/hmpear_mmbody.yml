@@ -11,21 +11,21 @@ epochs: &epochs 100
 train_dataset:
   name: ReferenceDataset
   params:
-    data_path: &data_path data/hmpear_mm_mmfi5.pkl
+    data_path: &data_path data/hmpear_mm_mmbody3.pkl
     split: [train, val]
-    ref_data_path: data/mmfi.pkl
-    ref_split: [train_rdn_p3, val_rdn_p3]
+    ref_data_path: data/mmbody.pkl
+    ref_split: [train, val]
     ref_ratio: 0.1
     both: true
 unsup_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmfi.pkl
-    split: [train_rdn_p3, val_rdn_p3]
+    data_path: data/mmbody.pkl
+    split: [train, val]
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
+    data_path: *data_path
     split: test
 test_dataset:
   name: TemporalDataset
@@ -52,6 +52,7 @@ sched_params:
 # Model parameters
 # --------------------------------------
 has_teacher: true
+# teacher_checkpoint_path: /home/zpengac/mmwave/dgmmwave/logs/hmpear_mmfi_unsup_both_teacher/20250701_161111/P4Transformer-epoch=46-val_mpjpe=0.1528.ckpt
 mode: train
 model_name: P4Transformer
 model_params:
@@ -76,7 +77,7 @@ loss_params:
   thres_static: 0.15
   thres_dist: 0.05
 # weight for auxiliary losses
-w_dynamic: 0.1
+w_dynamic: 0.01
 w_static: 0.01
 w_pseudo: 0.1
 # --------------------------------------
@@ -177,8 +178,8 @@ val_pipeline: &val_pipeline
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-  - name: ToITOP
-    params: null
+  # - name: ToITOP
+  #   params: null
   - name: Normalize
     params:
       feat_scale: null

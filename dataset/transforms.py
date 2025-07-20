@@ -182,7 +182,7 @@ class ConvertToRefinedMMWavePointCloud():
         # flow_thres = self.max_dist_threshold
         # flow_thres = np.random.rand() * self.max_dist_threshold
         # random number between min_dist_threshold and max_dist_threshold
-        flow_thres = self.max_dist_threshold
+        flow_thres = np.random.uniform(self.min_dist_threshold, self.max_dist_threshold)
 
         # 1. Calculate keypoint flow (temporal displacement)
         keypoint_flow = keypoints[1:] - keypoints[:-1]  # (T-1, J, 3)
