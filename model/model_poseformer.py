@@ -173,6 +173,7 @@ class PoseTransformer(nn.Module):
 
 
     def forward(self, x):
+        x = x[..., :3]
         x = x.permute(0, 3, 1, 2)
         b, _, _, p = x.shape
         ### now x is [batch_size, 2 channels, receptive frames, input_dim], following image data
