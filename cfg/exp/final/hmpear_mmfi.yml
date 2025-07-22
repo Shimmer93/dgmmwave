@@ -30,8 +30,8 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
-    split: test
+    data_path: data/mmfi.pkl
+    split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -130,6 +130,8 @@ train_pipeline: &train_pipeline
     params:
       max_dist_threshold: 0.2
       max_dist_threshold: 0.1
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: RandomScale
     params:
       scale_min: 0.9

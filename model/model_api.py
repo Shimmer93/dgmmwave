@@ -228,7 +228,7 @@ class LitModel(pl.LightningModule):
 
                 if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
                     x_sup_li = batch_sup['point_clouds'][..., :3]
-                    x_sup_mm = batch_sup['point_clouds_trans'][..., :-1, :, :3]
+                    x_sup_mm = torch.clone(x_sup_li)
                     y_sup = batch_sup['keypoints']
                     xr_sup_mm = batch_sup['ref_point_clouds'][..., :3]
                     yr_sup = batch_sup['ref_keypoints']
@@ -297,7 +297,7 @@ class LitModel(pl.LightningModule):
                 #               F.mse_loss(y_unsup_t1_hat * mask, y_unsup_t1_pseudo.detach() * mask)
 
                 unsup_loss = self.loss.to(self.device)
-                loss_unsup_dynamic, loss_unsup_static = unsup_loss(x_unsup, y_unsup_t0_hat, y_unsup_t1_hat)
+                loss_unsup_dynamic, loss_unsup_static = unsup_loss(x_unsup, y_unsup_t0_pseudo, y_unsup_t1_pseudo)
 
                 loss = loss_sup + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static + self.hparams.w_pseudo * loss_pseudo
                 losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static, 'loss_pseudo': loss_pseudo}
