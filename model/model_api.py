@@ -237,13 +237,6 @@ class LitModel(pl.LightningModule):
 
                     B = x_sup_li.shape[0]
 
-                    # if torch.rand(1).item() < 0.5:
-                    #     perm = torch.randperm(x_sup_li.shape[-2])
-                    #     num2exchange = torch.randint(0, x_sup_li.shape[-2], (1,)).item()
-                    #     x_sup_li = torch.cat((x_sup_li[:B, ..., perm[:num2exchange], :3], x_sup_mm[:B, ..., perm[num2exchange:], :3]), dim=-2)
-                        # x_sup_mm = torch.cat((x_sup_mm[:B, ..., perm[:num2exchange], :3], x_sup_li[:B, ..., perm[num2exchange:], :3]), dim=-2)
-                        # x_sup_li = x_sup_li_
-
                     y_sup_mm_hat = self.model_teacher(x_sup_mm)
                     yr_sup_mm_hat = self.model_teacher(xr_sup_mm)
                     y_sup_li_hat = self.model(x_sup_li)
@@ -282,133 +275,26 @@ class LitModel(pl.LightningModule):
                 y_unsup_t0_hat = self.model(x_unsup_t0)
                 y_unsup_t1_hat = self.model(x_unsup_t1)
 
-                # loss_pseudo = F.mse_loss(y_unsup_t0_hat, y_unsup_t0_pseudo.detach()) + F.mse_loss(y_unsup_t1_hat, y_unsup_t1_pseudo.detach())
-                # mask_dist_pos, mask_dist_neg = chamfer_mask(x_unsup, y_unsup_t0_pseudo, y_unsup_t1_pseudo)
-                # y_unsup_flow = torch.norm(y_unsup_t1_pseudo - y_unsup_t0_pseudo, p=2, dim=-1).unsqueeze(-1)
-                # mask_flow_pos = (y_unsup_flow > 0.05)
-                # mask_flow_neg = (y_unsup_flow < 0.01)
-                # mask_pos = mask_dist_pos & mask_flow_pos
-                # mask_neg = mask_dist_neg & mask_flow_neg
-                # print(f"mask_pos: {mask_pos.sum()} / {mask_pos.numel()}, mask_neg: {mask_neg.sum()} / {mask_neg.numel()}")
-                # mask = (mask_pos | mask_neg).detach()
-
                 loss_pseudo = F.mse_loss(y_unsup_t0_hat, y_unsup_t0_pseudo.detach()) + \
                               F.mse_loss(y_unsup_t1_hat, y_unsup_t1_pseudo.detach())
-                # loss_pseudo = F.mse_loss(y_unsup_t0_hat * mask, y_unsup_t0_pseudo.detach() * mask) + \
-                #               F.mse_loss(y_unsup_t1_hat * mask, y_unsup_t1_pseudo.detach() * mask)
 
                 unsup_loss = self.loss.to(self.device)
                 loss_unsup_dynamic, loss_unsup_static = unsup_loss(x_unsup, y_unsup_t0_pseudo, y_unsup_t1_pseudo)
 
                 loss = loss_sup + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static + self.hparams.w_pseudo * loss_pseudo
                 losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static, 'loss_pseudo': loss_pseudo}
-            elif self.hparams.train_dataset['name'] in ['ReferenceDataset'] and self.hparams.ours:
-                batch_sup = batch['sup']
-                batch_unsup = batch['unsup']
-
-                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
-                    x_sup0 = batch_sup['point_clouds'][..., :3]
-                    x_sup1 = batch_sup['point_clouds_trans'][..., :-1, :, :3]
-                    y_sup = batch_sup['keypoints']
-                    xr_sup0 = batch_sup['ref_point_clouds'][..., :3]
-                    yr_sup = batch_sup['ref_keypoints']
-                    x_unsup = batch_unsup['point_clouds'][..., :3]
-
-                    B = x_sup0.shape[0]
-
-                    x_sup0_ = torch.cat((x_sup0, xr_sup0), dim=0)
-                    y_sup_ = torch.cat((y_sup, yr_sup), dim=0)
-
-                    # print(f'x_sup0_ shape: {x_sup0_.shape}, x_sup1 shape: {x_sup1.shape}')
-
-                    # if torch.rand(1).item() < 0.5:
-                    #     perm = torch.randperm(x_sup0_.shape[-2])
-                    #     num2exchange = torch.randint(0, x_sup0_.shape[-2], (1,)).item()
-                    #     x_sup0__ = torch.cat((x_sup0_[:B, ..., perm[:num2exchange], :3], x_sup1[:B, ..., perm[num2exchange:], :3]), dim=-2)
-                    #     x_sup1[:B] = torch.cat((x_sup1[:B, ..., perm[:num2exchange], :3], x_sup0_[:B, ..., perm[num2exchange:], :3]), dim=-2)
-                    #     x_sup0_[:B] = x_sup0__
-
-                    y_sup0_hat = self.model(x_sup0_)
-                    y_sup1_hat = self.model(x_sup1)
-
-                    y_hat = y_sup0_hat[:B]
-
-                    loss_sup = F.mse_loss(y_sup0_hat, y_sup_) + F.mse_loss(y_sup1_hat, y_sup)
-                else:
-                    x_sup = batch_sup['point_clouds']
-                    y_sup = batch_sup['keypoints']
-                    xr_sup = batch_sup['ref_point_clouds']
-                    yr_sup = batch_sup['ref_keypoints']
-                    x_unsup = batch_unsup['point_clouds']
-
-                    y_sup_hat = self.model(x_sup)
-                    yr_sup_hat = self.model(xr_sup)
-                    y_hat = y_sup_hat
-
-                    loss_sup = F.mse_loss(y_sup_hat, y_sup) + F.mse_loss(yr_sup_hat, yr_sup)
-                
-                x_unsup_t0 = x_unsup[:, :-1, ...]
-                x_unsup_t1 = x_unsup[:, 1:, ...]
-
-                y_unsup_t0_hat = self.model(x_unsup_t0)
-                y_unsup_t1_hat = self.model(x_unsup_t1)
-
-                unsup_loss = self.loss.to(self.device)
-                loss_unsup_dynamic, loss_unsup_static = unsup_loss(x_unsup, y_unsup_t0_hat, y_unsup_t1_hat)
-
-                loss = loss_sup + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static
-                losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static}
 
             elif self.hparams.train_dataset['name'] in ['ReferenceDataset']:
                 x_ref = batch['ref_point_clouds']
                 y_ref = batch['ref_keypoints']
 
-                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
-                    x_ = batch['point_clouds_trans'][..., :-1, :, :3]
-                    if torch.rand(1).item() < 0.5:
-                        perm = torch.randperm(x_.shape[-2])
-                        num2exchange = torch.randint(0, x_.shape[-2], (1,)).item()
-                        x__ = torch.cat((x[..., perm[:num2exchange], :3], x_[..., perm[num2exchange:], :3]), dim=-2)
-                        x_ = torch.cat((x_[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
-                        x = x__
-                    y_hat = self.model(x)
-                    y_hat_ = self.model(x_)
-                    y_ref_hat = self.model(x_ref)
-                    loss = self.loss(y_hat, y) + self.loss(y_hat_, y) + self.loss(y_ref_hat, y_ref)
-                else:
-                    y_hat = self.model(x)
-                    y_ref_hat = self.model(x_ref)
-                    loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
-                losses = {'loss': loss}
-            elif self.hparams.train_dataset['name'] in ['ReferenceOneToOneDataset']:
-                x_ref = batch['ref_point_clouds']
-                y_ref = batch['ref_keypoints']
-                if torch.rand(1).item() < 0.5:
-                    perm = torch.randperm(x_ref.shape[-2])
-                    num2exchange = torch.randint(0, x_ref.shape[-2], (1,)).item()
-                    x_ = torch.cat((x[..., perm[:num2exchange], :3], x_ref[..., perm[num2exchange:], :3]), dim=-2)
-                    x_ref_ = torch.cat((x_ref[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
-                    x = x_
-                    x_ref = x_ref_
                 y_hat = self.model(x)
                 y_ref_hat = self.model(x_ref)
                 loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
                 losses = {'loss': loss}
             else:
-                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
-                    x_ = batch['point_clouds_trans']
-                    if torch.rand(1).item() < 0.5:
-                        perm = torch.randperm(x_.shape[-2])
-                        num2exchange = torch.randint(0, x_.shape[-2], (1,)).item()
-                        x__ = torch.cat((x[..., perm[:num2exchange], :3], x_[..., perm[num2exchange:], :3]), dim=-2)
-                        x_ = torch.cat((x_[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
-                        x = x__
-                    y_hat = self.model(x)
-                    y_hat_ = self.model(x_)
-                    loss = self.loss(y_hat, y) + self.loss(y_hat_, y)
-                else:
-                    y_hat = self.model(x)
-                    loss = self.loss(y_hat, y)
+                y_hat = self.model(x)
+                loss = self.loss(y_hat, y)
                 losses = {'loss': loss}
         elif self.hparams.model_name in ['P4TransformerSimCC']:
             c_hat, y_hat = self.model(x)
