@@ -74,12 +74,12 @@ model_params:
 # --------------------------------------
 loss_name: UnsupLoss
 loss_params:
-  thres_static: 0.15
+  thres_static: 0.2
   thres_dist: 0.05
 # weight for auxiliary losses
 w_dynamic: 0.01
 w_static: 0.01
-w_pseudo: 0.1
+w_pseudo: 1.0
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -128,8 +128,8 @@ train_pipeline: &train_pipeline
   #     max_dist_threshold: 0
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.2
       max_dist_threshold: 0.1
+      min_dist_threshold: 0.02
     ori_key: point_clouds
     more_keys: [point_clouds_trans]
   - name: RandomScale
@@ -176,7 +176,7 @@ val_pipeline: &val_pipeline
   - name: UniformSample
     params:
       pad_type: 'start'
-      clip_len: 5
+      clip_len: 6
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
@@ -189,6 +189,10 @@ val_pipeline: &val_pipeline
     params: 
       outlier_type: 'box'
       radius: 1.5
+  - name: ConvertToRefinedMMWavePointCloud
+    params:
+      max_dist_threshold: 0.1
+      min_dist_threshold: 0.02
   - name: ReduceKeypointLen
     params:
       only_one: true

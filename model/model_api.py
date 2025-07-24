@@ -124,7 +124,8 @@ class LitModel(pl.LightningModule):
                 self.model_teacher.load_state_dict(teacher_state_dict, strict=False)
 
     def _recover_point_cloud(self, x, center, radius):
-        x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        # print(radius)
+        # x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
         x = torch2numpy(x)
         return x
     
@@ -135,8 +136,8 @@ class LitModel(pl.LightningModule):
 
     def _recover_data(self, x, y, y_hat, center, radius):
         x = self._recover_point_cloud(x, center, radius)
-        y = self._recover_skeleton(y, center, radius)
-        y_hat = self._recover_skeleton(y_hat, center, radius)
+        y = self._recover_point_cloud(y, center, radius)
+        y_hat = self._recover_point_cloud(y_hat, center, radius)
         return x, y, y_hat
 
     def _get_bounds(self, data):
@@ -576,28 +577,9 @@ class LitModel(pl.LightningModule):
     def _evaluate(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
-        # if hasattr(self.hparams, 'has_teacher') and self.hparams.has_teacher:
-        #     y_hat0 = self.model(x)
-        #     y_hat1 = self.model_teacher(x)
-        #     y_hat = (y_hat0 + y_hat1) / 2
-        if self.hparams.model_name in ['P4TransformerFlow']:
-            y_hat, pose_hat, loc_hat, flow_hat = self.model(x[:, :-1, ...])
-            accum_flow_hat = torch.cumsum(flow_hat, dim=1)
-            y_hat = torch.cat((y_hat[:, 0:1, ...], accum_flow_hat), dim=1)
-            return x, y, y_hat, pose_hat, loc_hat, flow_hat
-        elif self.hparams.model_name in ['P4TransformerFlowDA']:
-            flow_hat, loc_hat = self.model(x[:, :-1, ...])
-            return x, y, y, loc_hat, flow_hat
-        elif self.hparams.model_name in ['P4TransformerMotion']:
-            m_hat = self.model(x)
-            return x, y, y, m_hat
-        elif self.hparams.model_name in ['P4TransformerLidarMMWave']:
-            x_ref = batch['point_clouds_trans']
-            y_hat = self.model(x, x_ref)
-            return x, y, y_hat
-        else:
-            y_hat = self.model(x)
-            return x, y, y_hat
+        
+        y_hat = self.model(x)
+        return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
         if 'sup' in batch:
@@ -629,64 +611,13 @@ class LitModel(pl.LightningModule):
         c = batch['centroid']
         r = batch['radius']
 
-        if self.hparams.model_name in ['P4TransformerFlow']:
-            x, y, y_hat_, pose_hat, loc_hat, flow_hat = self._evaluate(batch)
-            y0 = y[:, 0:1, ...]
-            loc = y0[:, :, 8:9, :]
-            pose = y0 - loc
-            flow = y[:, 1:, ...] - y[:, :-1, ...]
-            y = y[:, 0:1, ...]
-            y_hat_ = y_hat_[:, 0:1, ...]
-
-            l_pose = F.mse_loss(pose_hat, pose)
-            l_loc = F.mse_loss(loc_hat, loc)
-            l_flow = F.mse_loss(flow_hat, flow)
-
-        elif self.hparams.model_name in ['P4TransformerFlowDA']:
-            x, y, y_hat_, loc_hat, flow_hat = self._evaluate(batch)
-            y0 = y[:, 0:1, ...]
-            loc = y0[:, :, 8:9, :]
-            flow = y[:, 1:, ...] - y[:, :-1, ...]
-            y = y[:, 0:1, ...]
-            y_hat_ = y_hat_[:, 0:1, ...]
-
-            l_loc = F.mse_loss(loc_hat, loc)
-            l_flow = F.mse_loss(flow_hat, flow)
-
-        elif self.hparams.model_name in ['P4TransformerMotion']:
-            x, y, y_hat_, m_hat = self._evaluate(batch)
-
-            x0 = x[:, 0:1, :, :3] # B 1 N 3
-            x1 = x[:, 1:2, :, :3] # B 1 N 3
-            x1_hat = x0 + m_hat # B 1 N 3
-            y_hat = y
-            
-            chamfer_dist = ChamferDistance()
-            dist1, dist2 = chamfer_dist(x1_hat[:, 0, :, :3], x1[:, 0, :, :3])
-            loss_chamfer = dist1.mean() + dist2.mean()
-
-            loss_reg = torch.norm(m_hat, dim=-1).mean()
-
-            loss = loss_chamfer + self.hparams.w_reg * loss_reg
-
-        else:
-            x, y, y_hat_ = self._evaluate(batch)
-            y = y[:, -1:, ...]
-            y_hat_ = y_hat_[:, -1:, ...]
-        
-        x, y, y_hat = self._recover_data(x, y, y_hat_, c, r)
+        x, y, y_hat = self._evaluate(batch)
+        x, y, y_hat = self._recover_data(x, y, y_hat, c, r)
+        y = y[:, -1:, ...]
+        y_hat = y_hat[:, -1:, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
         log_dict = {'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}
-        if self.hparams.model_name in ['P4TransformerFlow']:
-            log_dict['val_l_pose'] = l_pose
-            log_dict['val_l_loc'] = l_loc
-            log_dict['val_l_flow'] = l_flow
-        elif self.hparams.model_name in ['P4TransformerFlowDA']:
-            log_dict['val_l_loc'] = l_loc
-            log_dict['val_l_flow'] = l_flow
-        elif self.hparams.model_name in ['P4TransformerMotion']:
-            log_dict['val_loss'] = loss
         self.log_dict(log_dict, sync_dist=True)
 
         if batch_idx == 0:
@@ -697,108 +628,23 @@ class LitModel(pl.LightningModule):
         r = batch['radius']
         si = batch['sequence_index']
 
-        if self.hparams.model_name in ['P4TransformerFlow']:
-            x, y, y_hat_, pose_hat, loc_hat, flow_hat = self._evaluate(batch)
-            y0 = y[:, 0:1, ...]
-            loc = y0[:, :, 8:9, :]
-            pose = y0 - loc
-            flow = y[:, 1:, ...] - y[:, :-1, ...]
-            y = y[:, 0:1, ...]
-            y_hat_ = y_hat_[:, 0:1, ...]
-
-            l_pose = F.mse_loss(pose_hat, pose)
-            l_loc = F.mse_loss(loc_hat, loc)
-            l_flow = F.mse_loss(flow_hat, flow)
-
-        elif self.hparams.model_name in ['P4TransformerFlowDA']:
-            x, y, y_hat_, loc_hat, flow_hat = self._evaluate(batch)
-            y0 = y[:, 0:1, ...]
-            loc = y0[:, :, 8:9, :]
-            flow = y[:, 1:, ...] - y[:, :-1, ...]
-            y = y[:, 0:1, ...]
-            y_hat_ = y_hat_[:, 0:1, ...]
-
-            l_loc = F.mse_loss(loc_hat, loc)
-            l_flow = F.mse_loss(flow_hat, flow)
-
-        elif self.hparams.model_name in ['P4TransformerMotion']:
-            x, y, y_hat_, m_hat = self._evaluate(batch)
-
-            x0 = x[:, 0:1, :, :3] # B 1 N 3
-            x1 = x[:, 1:2, :, :3] # B 1 N 3
-            x1_hat = x0 + m_hat # B 1 N 3
-            y_hat = y
-
-            chamfer_dist = ChamferDistance()
-            dist1, dist2 = chamfer_dist(x1_hat[:, 0, :, :3], x1[:, 0, :, :3])
-            loss_chamfer = dist1.mean() + dist2.mean()
-
-            loss_reg = torch.norm(m_hat, dim=-1).mean()
-
-            loss = loss_chamfer + self.hparams.w_reg * loss_reg
-
-        else:
-            x, y, y_hat_ = self._evaluate(batch)
-            y = y[:, -1:, ...]
-            y_hat_ = y_hat_[:, -1:, ...]
-
-        # start_idx = (batch_idx * 32) % (1024 - 32)
-        # end_idx = start_idx + 32
-
-        # y_mem = self.model.forward_debug(start_idx, end_idx)
-        # y_mem = y_mem.squeeze().detach().cpu().numpy()
-        # np.save(f'logs/{self.hparams.exp_name}/{self.hparams.version}/y_mem_{start_idx}_{end_idx}.npy', y_mem)
-
-        if hasattr(self.hparams, 'use_aux') and self.hparams.use_aux:
-            y_hat = y_hat_.squeeze(1)
-            bds = []
-            for b in ITOPSkeleton.bones:
-                bd = y_hat[:, b[1]].clone() - y_hat[:, b[0]].clone()
-                bd = bd / torch.linalg.norm(bd, axis=-1, keepdims=True)
-                bds.append(bd)
-            bds = torch.stack(bds, axis=1)
-            pl_dir = self.reg_dir(bds)
-            l_pl_dir = F.mse_loss(pl_dir, torch.zeros_like(pl_dir))
-
-            y_hat0, y_hat1 = torch.chunk(y_hat.clone(), 2, dim=0)
-            bms = []
-            for b in ITOPSkeleton.bones:
-                bm = y_hat1[:, b[1]].clone() - y_hat0[:, b[0]].clone()
-                bms.append(bm)
-            bms = torch.stack(bms, axis=1)
-            pl_motion = self.reg_motion(bms)
-            l_pl_motion = F.mse_loss(pl_motion, torch.zeros_like(pl_motion))
-
-        x, y, y_hat = self._recover_data(x, y, y_hat_, c, r)
+        x, y, y_hat = self._evaluate(batch)
+        x, y, y_hat = self._recover_data(x, y, y_hat, c, r)
+        y = y[:, -1:, ...]
+        y_hat = y_hat[:, -1:, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
         log_dict = {'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}
-        if self.hparams.model_name in ['P4TransformerFlow']:
-            log_dict['test_l_pose'] = l_pose
-            log_dict['test_l_loc'] = l_loc
-            log_dict['test_l_flow'] = l_flow
-        if self.hparams.model_name in ['P4TransformerFlowDA']:
-            log_dict['test_l_loc'] = l_loc
-            log_dict['test_l_flow'] = l_flow
-        if hasattr(self.hparams, 'use_aux') and self.hparams.use_aux:
-            log_dict['test_pl_dir'] = l_pl_dir
-            log_dict['test_pl_motion'] = l_pl_motion
-        if self.hparams.model_name in ['P4TransformerMotion']:
-            log_dict['val_loss'] = loss
         self.log_dict(log_dict, sync_dist=True)
         if batch_idx == 0:
             self._vis_pred_gt_keypoints(x, y, y_hat)
 
         if self.hparams.save_when_test:
             result = {'pred': y_hat, 'gt': y, 'input': x, 'seq_idx': torch2numpy(si)}
-            if self.hparams.model_name in ['P4TransformerFlow', 'P4TransformerFlowDA']:
-                result['flow'] = torch2numpy(flow_hat)
             self.results.append(result)
 
     def on_test_end(self):
         if self.hparams.save_when_test:
-            mpjpes = []
-            pampjpes = []
             split_seqs = []
             split_idxs = []
             last_seq_idx = -1
@@ -809,57 +655,18 @@ class LitModel(pl.LightningModule):
                     pred = result['pred'][i]
                     input = result['input'][i]
                     seq_idx = int(result['seq_idx'][i].item())
-                    if self.hparams.model_name in ['P4TransformerFlow', 'P4TransformerFlowDA']:
-                        flow = result['flow'][i]
                     if seq_idx != last_seq_idx:
                         last_seq_idx = seq_idx
                         split_seqs.append({'keypoints': [], 'keypoints_pred': [], 'input': []})
-                        if self.hparams.model_name in ['P4TransformerFlow', 'P4TransformerFlowDA']:
-                            split_seqs[-1]['flow'] = []
                         split_idxs.append(seq_idx)
                     split_seqs[-1]['keypoints'].append(gt)
                     split_seqs[-1]['keypoints_pred'].append(pred)
                     split_seqs[-1]['input'].append(input)
-                    if self.hparams.model_name in ['P4TransformerFlow', 'P4TransformerFlowDA']:
-                        split_seqs[-1]['flow'].append(flow)
 
             for i in range(len(split_seqs)):
                 split_seqs[i]['keypoints'] = np.array(split_seqs[i]['keypoints'])[:, 0, ...]
                 split_seqs[i]['input'] = np.array(split_seqs[i]['input'])[:, 0, ...]
-                
-                kps_pred = np.array(split_seqs[i]['keypoints_pred'])
-                N, T, J, D = kps_pred.shape
-                kps_pred_ = np.zeros((N + T - 1, J, D))
-                for j in range(T):
-                    kps_pred_[j:j+N] += kps_pred[:, j]
-                for j in range(T):
-                    kps_pred_[j] *= (T / (j + 1))
-                kps_pred = kps_pred_[:N]
-                split_seqs[i]['keypoints_pred'] = kps_pred / T
-                # split_seqs[i]['keypoints_pred'] = kps_pred[:, 0, ...]
-
-                if self.hparams.model_name in ['P4TransformerFlow', 'P4TransformerFlowDA']:
-                    flow = np.array(split_seqs[i]['flow'])
-                    N, T, J, D = flow.shape
-                    flow_ = np.zeros((N + T - 1, J, D))
-                    for j in range(T):
-                        flow_[j:j+N] += flow[:, j]
-                    for j in range(T):
-                        flow_[j] *= (T / (j + 1))
-                    flow = flow_[:N]
-                    split_seqs[i]['flow'] = flow / T
-                    # split_seqs[i]['flow'] = flow[:, 0, ...]
-
-                if kps_pred.shape[0] > 0:
-                    mpjpe, pampjpe = calulate_error(split_seqs[i]['keypoints_pred'][:, np.newaxis], split_seqs[i]['keypoints'][:, np.newaxis], reduce=False)
-                    mpjpes.append(mpjpe)
-                    pampjpes.append(pampjpe)
-
-            mpjpes = np.concatenate(mpjpes, axis=0)
-            pampjpes = np.concatenate(pampjpes, axis=0)
-            mpjpe = np.mean(mpjpes)
-            pampjpe = np.mean(pampjpes)
-            print(f'Final MPJPE: {mpjpe}, PAMJPE: {pampjpe}')
+                split_seqs[i]['keypoints_pred'] = np.array(split_seqs[i]['keypoints_pred'])[:, 0, ...]
 
             with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
                 pickle.dump(split_seqs, f)
