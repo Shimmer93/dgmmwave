@@ -26,25 +26,10 @@ def main(args):
         dm = LitDataModule(hparams=args)
     if args.mean_teacher:
         model = MeanTeacherLitModel(hparams=args)
-    elif args.aux:
-        model = AuxLitModel(hparams=args)
-        monitor = 'val_loss'
-        filename = args.model_name+'-{epoch}-{val_loss:.4f}'
-    elif args.f2p:
-        model = F2PLitModel(hparams=args)
-        monitor = 'val_mpjpe'
-        filename = args.model_name+'-{epoch}-{val_mpjpe:.4f}'
     else:
         model = LitModel(hparams=args)
-        if args.model_name in ['P4TransformerFlow', 'P4TransformerFlowDA']:
-            monitor = 'val_l_flow'
-            filename = args.model_name+'-{epoch}-{val_l_flow:.4f}'
-        elif args.model_name in ['P4TransformerMotion']:
-            monitor = 'val_loss'
-            filename = args.model_name+'-{epoch}-{val_loss:.4f}'
-        else:
-            monitor = 'val_mpjpe'
-            filename = args.model_name+'-{epoch}-{val_mpjpe:.4f}'
+    monitor = 'val_mpjpe'
+    filename = args.model_name+'-{epoch}-{val_mpjpe:.4f}'
     # model.load_from_checkpoint(args.checkpoint_path)
 
     callbacks = [

@@ -9,6 +9,7 @@ import torch.optim.lr_scheduler as sched
 import pytorch_lightning as pl
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
 import matplotlib.pyplot as plt
+import pickle
 
 import os
 from collections import OrderedDict
@@ -128,7 +129,8 @@ class MeanTeacherLitModel(pl.LightningModule):
             self.results = []
 
     def _recover_point_cloud(self, x, center, radius):
-        x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        # print(radius)
+        # x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
         x = torch2numpy(x)
         return x
     
@@ -139,8 +141,8 @@ class MeanTeacherLitModel(pl.LightningModule):
 
     def _recover_data(self, x, y, y_hat, center, radius):
         x = self._recover_point_cloud(x, center, radius)
-        y = self._recover_skeleton(y, center, radius)
-        y_hat = self._recover_skeleton(y_hat, center, radius)
+        y = self._recover_point_cloud(y, center, radius)
+        y_hat = self._recover_point_cloud(y_hat, center, radius)
         return x, y, y_hat
 
     def _get_bounds(self, data):
@@ -206,9 +208,9 @@ class MeanTeacherLitModel(pl.LightningModule):
             ax_gt_xy.plot(p[0], p[1], color=color, marker='o')
             ax_gt_xz.plot(p[0], p[2], color=color, marker='o')
             ax_gt_yz.plot(p[1], p[2], color=color, marker='o')
-            ax_pred_3d.scatter(p_hat[0], p_hat[2], p_hat[1], color=color, marker='o')
-            ax_gt_3d.scatter(p[0], p[2], p[1], color=color, marker='o')
-        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 2], x[0, 0, :, 1], 'g', marker='o')
+            ax_pred_3d.scatter(p_hat[0], p_hat[1], p_hat[2], color=color, marker='o')
+            ax_gt_3d.scatter(p[0], p[1], p[2], color=color, marker='o')
+        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 1], x[0, 0, :, 2], 'g', marker='o')
 
         fig.tight_layout()
 
@@ -231,32 +233,24 @@ class MeanTeacherLitModel(pl.LightningModule):
                 batch_unsup = batch['unsup']
 
                 if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
-                    x_sup0 = batch_sup['point_clouds'][..., :3]
-                    x_sup1 = batch_sup['point_clouds_trans'][..., :-1, :, :3]
+                    x_sup_li = batch_sup['point_clouds'][..., :3]
+                    x_sup_mm = torch.clone(x_sup_li)
                     y_sup = batch_sup['keypoints']
-                    xr_sup0 = batch_sup['ref_point_clouds'][..., :3]
+                    xr_sup_mm = batch_sup['ref_point_clouds'][..., :3]
                     yr_sup = batch_sup['ref_keypoints']
                     x_unsup = batch_unsup['point_clouds'][..., :3]
 
-                    B = x_sup0.shape[0]
+                    B = x_sup_li.shape[0]
 
-                    x_sup0_ = torch.cat((x_sup0, xr_sup0), dim=0)
-                    y_sup_ = torch.cat((y_sup, yr_sup), dim=0)
+                    y_sup_mm_hat = self.model_teacher(x_sup_mm)
+                    yr_sup_mm_hat = self.model_teacher(xr_sup_mm)
+                    y_sup_li_hat = self.model(x_sup_li)
+                    yr_sup_mm_hat2 = self.model(xr_sup_mm)
 
-                    if torch.rand(1).item() < 0.5:
-                        perm = torch.randperm(x_sup0_.shape[-2])
-                        num2exchange = torch.randint(0, x_sup0_.shape[-2], (1,)).item()
-                        x_sup0__ = torch.cat((x_sup0_[:B, ..., perm[:num2exchange], :3], x_sup1[:B, ..., perm[num2exchange:], :3]), dim=-2)
-                        x_sup1[:B] = torch.cat((x_sup1[:B, ..., perm[:num2exchange], :3], x_sup0_[:B, ..., perm[num2exchange:], :3]), dim=-2)
-                        x_sup0_[:B] = x_sup0__
+                    y_hat = y_sup_mm_hat[:B]
 
-                    y_sup0_hat, f0 = self.model(x_sup0_)
-                    y_sup1_hat, f1 = self.model(x_sup1)
-
-                    y_hat = y_sup0_hat[:B]
-
-                    loss_sup = F.mse_loss(y_sup0_hat, y_sup_) + F.mse_loss(y_sup1_hat, y_sup)
-                    loss_con = F.mse_loss(f0[:B], f1[:B])
+                    loss_sup = F.mse_loss(y_sup_mm_hat, y_sup) + F.mse_loss(y_sup_li_hat, y_sup) + \
+                                F.mse_loss(yr_sup_mm_hat, yr_sup) + F.mse_loss(yr_sup_mm_hat2, yr_sup)
                 else:
                     x_sup = batch_sup['point_clouds']
                     y_sup = batch_sup['keypoints']
@@ -269,7 +263,6 @@ class MeanTeacherLitModel(pl.LightningModule):
                     y_hat = y_sup_hat
 
                     loss_sup = F.mse_loss(y_sup_hat, y_sup) + F.mse_loss(yr_sup_hat, yr_sup)
-                    loss_con = 0.0
                 
                 x_unsup_t0 = x_unsup[:, :-1, ...]
                 x_unsup_t1 = x_unsup[:, 1:, ...]
@@ -279,198 +272,175 @@ class MeanTeacherLitModel(pl.LightningModule):
                     y_unsup_t0_pseudo, _ = self.model_ema.module(x_unsup_t0)
                     y_unsup_t1_pseudo, _ = self.model_ema.module(x_unsup_t1)
 
-                y_unsup_t0_hat, _ = self.model(x_unsup_t0)
-                y_unsup_t1_hat, _ = self.model(x_unsup_t1)
+                y_unsup_t0_hat = self.model(x_unsup_t0)
+                y_unsup_t1_hat = self.model(x_unsup_t1)
 
-                mask_dist_pos, mask_dist_neg = chamfer_mask(x_unsup, y_unsup_t0_pseudo, y_unsup_t1_pseudo)
-                y_unsup_flow = torch.norm(y_unsup_t1_pseudo - y_unsup_t0_pseudo, p=2, dim=-1).unsqueeze(-1)
-                mask_flow_pos = (y_unsup_flow > 0.1)
-                mask_flow_neg = (y_unsup_flow < 0.05)
-                mask_pos = mask_dist_pos & mask_flow_pos
-                mask_neg = mask_dist_neg & mask_flow_neg
-                mask = mask_pos | mask_neg
+                loss_pseudo = F.mse_loss(y_unsup_t0_hat, y_unsup_t0_pseudo.detach()) + \
+                              F.mse_loss(y_unsup_t1_hat, y_unsup_t1_pseudo.detach())
 
-                loss_pseudo = F.mse_loss(y_unsup_t0_pseudo * mask, y_unsup_t0_hat * mask) + F.mse_loss(y_unsup_t1_pseudo * mask, y_unsup_t1_hat * mask)
-
-                unsup_loss = self.loss.to(self.device)
-                loss_unsup_dynamic, loss_unsup_static = unsup_loss(x_unsup, y_unsup_t0_hat, y_unsup_t1_hat)
-
-                loss = loss_sup + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static + self.hparams.w_pseudo * loss_pseudo
-                losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static, 'loss_pseudo': loss_pseudo}
+                loss = loss_sup + self.hparams.w_pseudo * loss_pseudo
+                losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_pseudo': loss_pseudo}
 
             elif self.hparams.train_dataset['name'] in ['ReferenceDataset']:
                 x_ref = batch['ref_point_clouds']
                 y_ref = batch['ref_keypoints']
 
-                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
-                    x_ = batch['point_clouds_trans'][..., :-1, :, :3]
-                    if torch.rand(1).item() < 0.5:
-                        perm = torch.randperm(x_.shape[-2])
-                        num2exchange = torch.randint(0, x_.shape[-2], (1,)).item()
-                        x__ = torch.cat((x[..., perm[:num2exchange], :3], x_[..., perm[num2exchange:], :3]), dim=-2)
-                        x_ = torch.cat((x_[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
-                        x = x__
-                    y_hat = self.model(x)
-                    y_hat_ = self.model(x_)
-                    y_ref_hat = self.model(x_ref)
-                    loss = self.loss(y_hat, y) + self.loss(y_hat_, y) + self.loss(y_ref_hat, y_ref)
-                else:
-                    y_hat = self.model(x)
-                    y_ref_hat = self.model(x_ref)
-                    loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
-                losses = {'loss': loss}
-            elif self.hparams.train_dataset['name'] in ['ReferenceOneToOneDataset']:
-                x_ref = batch['ref_point_clouds']
-                y_ref = batch['ref_keypoints']
-                if torch.rand(1).item() < 0.5:
-                    perm = torch.randperm(x_ref.shape[-2])
-                    num2exchange = torch.randint(0, x_ref.shape[-2], (1,)).item()
-                    x_ = torch.cat((x[..., perm[:num2exchange], :3], x_ref[..., perm[num2exchange:], :3]), dim=-2)
-                    x_ref_ = torch.cat((x_ref[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
-                    x = x_
-                    x_ref = x_ref_
                 y_hat = self.model(x)
                 y_ref_hat = self.model(x_ref)
                 loss = self.loss(y_hat, y) + self.loss(y_ref_hat, y_ref)
                 losses = {'loss': loss}
             else:
-                if 'both' in self.hparams.train_dataset['params'] and self.hparams.train_dataset['params']['both']:
-                    x_ = batch['point_clouds_trans']
-                    if torch.rand(1).item() < 0.5:
-                        perm = torch.randperm(x_.shape[-2])
-                        num2exchange = torch.randint(0, x_.shape[-2], (1,)).item()
-                        x__ = torch.cat((x[..., perm[:num2exchange], :3], x_[..., perm[num2exchange:], :3]), dim=-2)
-                        x_ = torch.cat((x_[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
-                        x = x__
-                    y_hat = self.model(x)
-                    y_hat_ = self.model(x_)
-                    loss = self.loss(y_hat, y) + self.loss(y_hat_, y)
-                else:
-                    y_hat = self.model(x)
-                    loss = self.loss(y_hat, y)
+                y_hat = self.model(x)
+                loss = self.loss(y_hat, y)
                 losses = {'loss': loss}
         else:
             raise NotImplementedError
         
         return losses, x, y, y_hat
 
-    def _calculate_loss_eval(self, batch):
+    def _evaluate(self, batch):
         x = batch['point_clouds']
         y = batch['keypoints']
-        if self.hparams.model_name.lower() == 'p4tda5':
-            x, _ = torch.chunk(x, 2, dim=1)
-            y, _ = torch.chunk(y, 2, dim=1)
-            y_hat, _ = self.model.forward_train(x, y)
-        else:
-            raise NotImplementedError
         
+        y_hat = self.model(x)
         return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
-        loss, x, y, y_hat = self._calculate_loss(batch)
+        if 'sup' in batch:
+            c = batch['sup']['centroid']
+            r = batch['sup']['radius']
+        else:
+            c = batch['centroid']
+            r = batch['radius']
 
-        y_hat = torch2numpy(y_hat)
-        y = torch2numpy(y)
-        mpjpe, pampjpe = calulate_error(y_hat, y)
+        losses, x, y, y_hat = self._calculate_loss(batch)
 
-        self.log_dict({'train_loss': loss, 'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}, sync_dist=True)
-        return loss
+        if y_hat is None:
+            log_dict = {}
+        else:
+            # print(f"y_hat shape: {y_hat.shape}, y shape: {y.shape}, c shape: {c.shape}, r shape: {r.shape}")
+            y = self._recover_skeleton(y, c, r)
+            y_hat = self._recover_skeleton(y_hat, c, r)
+            mpjpe, pampjpe = calulate_error(y_hat, y)
+            log_dict = {'train_mpjpe': mpjpe, 'train_pampjpe': pampjpe}
+
+        for loss_name, loss in losses.items():
+            log_dict[f'train_{loss_name}'] = loss
+
+        self.log_dict(log_dict, sync_dist=True)
+
+        return losses['loss']
     
     def validation_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
-        c, _ = torch.chunk(c, 2, dim=1)
-        r, _ = torch.chunk(r, 2, dim=1)
 
-        x, y, y_hat = self._calculate_loss_eval(batch)
-
-        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-
-        y_hat = torch2numpy(y_hat)
-        y = torch2numpy(y)
+        x, y, y_hat = self._evaluate(batch)
+        x, y, y_hat = self._recover_data(x, y, y_hat, c, r)
+        y = y[:, -1:, ...]
+        y_hat = y_hat[:, -1:, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
-        self.log_dict({'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
+        log_dict = {'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}
+        self.log_dict(log_dict, sync_dist=True)
+
         if batch_idx == 0:
-            self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
+            self._vis_pred_gt_keypoints(x, y, y_hat)
     
     def test_step(self, batch, batch_idx):
         c = batch['centroid']
         r = batch['radius']
-        c, _ = torch.chunk(c, 2, dim=1)
-        r, _ = torch.chunk(r, 2, dim=1)
+        si = batch['sequence_index']
 
-        x, y, y_hat = self._calculate_loss_eval(batch)
-
-        y_hat = y_hat * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-        y = y * r.unsqueeze(-2).unsqueeze(-2) + c.unsqueeze(-2).unsqueeze(-2) # unnormalization
-
-        y_hat = torch2numpy(y_hat)
-        y = torch2numpy(y)
+        x, y, y_hat = self._evaluate(batch)
+        x, y, y_hat = self._recover_data(x, y, y_hat, c, r)
+        y = y[:, -1:, ...]
+        y_hat = y_hat[:, -1:, ...]
         mpjpe, pampjpe = calulate_error(y_hat, y)
 
-        self.log_dict({'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
+        log_dict = {'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}
+        self.log_dict(log_dict, sync_dist=True)
         if batch_idx == 0:
-            self._vis_pred_gt_keypoints(y_hat, y, torch2numpy(x))
-    
-    # def validation_step(self, batch, batch_idx):
-    #     c = batch['centroid']
-    #     r = batch['radius']
+            self._vis_pred_gt_keypoints(x, y, y_hat)
 
-    #     loss, x, y, y_hat = self._calculate_loss(batch)
+        if self.hparams.save_when_test:
+            result = {'pred': y_hat, 'gt': y, 'input': x, 'seq_idx': torch2numpy(si)}
+            self.results.append(result)
 
-    #     y_hat = torch2numpy(y_hat)
-    #     y1, _ = torch.chunk(y, 2, dim=1)
-    #     # c1, _ = torch.chunk(c, 2, dim=1)
-    #     # r1, _ = torch.chunk(r, 2, dim=1)
+    def on_test_end(self):
+        if self.hparams.save_when_test:
+            split_seqs = []
+            split_idxs = []
+            last_seq_idx = -1
 
-    #     y1 = torch2numpy(y1)
-    #     # c1 = torch2numpy(c1)
-    #     # r1 = torch2numpy(r1)
-    #     # print(y_hat.shape, y1.shape)
-    #     # y_hat = y_hat * r1[:, np.newaxis, np.newaxis, ...] + c1[:, np.newaxis, np.newaxis, ...]
-    #     # y1 = y1 * r1[:, np.newaxis, np.newaxis, ...] + c1[:, np.newaxis, np.newaxis, ...]
-    #     mpjpe, pampjpe = calulate_error(y_hat, y1)
+            for result in self.results:
+                for i in range(len(result['pred'])):
+                    gt = result['gt'][i]
+                    pred = result['pred'][i]
+                    input = result['input'][i]
+                    seq_idx = int(result['seq_idx'][i].item())
+                    if seq_idx != last_seq_idx:
+                        last_seq_idx = seq_idx
+                        split_seqs.append({'keypoints': [], 'keypoints_pred': [], 'input': []})
+                        split_idxs.append(seq_idx)
+                    split_seqs[-1]['keypoints'].append(gt)
+                    split_seqs[-1]['keypoints_pred'].append(pred)
+                    split_seqs[-1]['input'].append(input)
 
-    #     self.log_dict({'val_loss': loss, 'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}, sync_dist=True)
-    #     if batch_idx == 0:
-    #         self._vis_pred_gt_keypoints(y_hat, y1, torch2numpy(x))
-    #     return loss
-    
-    # def test_step(self, batch, batch_idx):
-    #     c = batch['centroid']
-    #     r = batch['radius']
+            for i in range(len(split_seqs)):
+                split_seqs[i]['keypoints'] = np.array(split_seqs[i]['keypoints'])[:, 0, ...]
+                split_seqs[i]['input'] = np.array(split_seqs[i]['input'])[:, 0, ...]
+                split_seqs[i]['keypoints_pred'] = np.array(split_seqs[i]['keypoints_pred'])[:, 0, ...]
 
-    #     loss, x, y, y_hat = self._calculate_loss(batch)
+            with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
+                pickle.dump(split_seqs, f)
 
-    #     y_hat = torch2numpy(y_hat)
-    #     y1, _ = torch.chunk(y, 2, dim=1)
-    #     # c1, _ = torch.chunk(c, 2, dim=1)
-    #     # r1, _ = torch.chunk(r, 2, dim=1)
+        return super().on_test_end()
 
-    #     y1 = torch2numpy(y1)
-    #     # c1 = torch2numpy(c1)
-    #     # r1 = torch2numpy(r1)
-    #     # y_hat = y_hat * r1[:, np.newaxis, np.newaxis, ...] + c1[:, np.newaxis, np.newaxis, ...]
-    #     # y1 = y1 * r1[:, np.newaxis, np.newaxis, ...] + c1[:, np.newaxis, np.newaxis, ...]
-    #     mpjpe, pampjpe = calulate_error(y_hat, y1)
+    def predict_step(self, batch, batch_idx):
+        x = batch['point_clouds']
+        c = batch['centroid']
+        r = batch['radius']
+        si = batch['sequence_index']
 
-    #     self.log_dict({'test_loss': loss, 'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}, sync_dist=True)
-    #     if batch_idx == 0:
-    #         self._vis_pred_gt_keypoints(y_hat, y1, torch2numpy(x))
-    #     return loss
+        y_hat = self.model(x)
+        x = self._recover_point_cloud(x, c, r)
+        y_hat = self._recover_skeleton(y_hat, c, r)
+        
+        result = {'pred': y_hat, 'input': x, 'seq_idx': torch2numpy(si)}
+        self.results.append(result)
+
+    def on_predict_end(self):
+        if self.hparams.save_when_test:
+            split_seqs = []
+            split_idxs = []
+            last_seq_idx = -1
+
+            for result in self.results:
+                for i in range(len(result['pred'])):
+                    pred = result['pred'][i]
+                    input = result['input'][i]
+                    seq_idx = int(result['seq_idx'][i].item())
+                    if seq_idx != last_seq_idx:
+                        last_seq_idx = seq_idx
+                        split_seqs.append({'keypoints_pred': [], 'input': []})
+                        split_idxs.append(seq_idx)
+                    split_seqs[-1]['keypoints_pred'].append(pred)
+                    split_seqs[-1]['input'].append(input)
+
+            for i in range(len(split_seqs)):
+                split_seqs[i]['input'] = np.array(split_seqs[i]['input'])[:, 0, ...]
+                split_seqs[i]['keypoints_pred'] = np.array(split_seqs[i]['keypoints_pred'])[:, 0, ...]
+
+            with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
+                pickle.dump(split_seqs, f)
+
+        return super().on_predict_end()
 
     def configure_optimizers(self):
         optimizer = create_optimizer(self.hparams, self.model.parameters())
         scheduler = create_scheduler(self.hparams, optimizer)
         return [optimizer], [scheduler]
-
-    def shared_step(self, x, y, metric):
-        y_hat = self.model(x) if self.training or self.model_ema is None else self.model_ema.module(x)
-        loss = self.criterion(y_hat, y)
-        self.log_dict(metric(y_hat, y), prog_bar=True)
-        return loss
 
     def on_before_backward(self, loss: torch.Tensor) -> None:
         if self.model_ema:

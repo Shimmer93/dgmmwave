@@ -104,14 +104,6 @@ class LitModel(pl.LightningModule):
         if hparams.save_when_test:
             self.results = []
 
-        if hasattr(hparams, 'use_aux') and hparams.use_aux:
-            self.reg_dir = create_model('PlausibilityRegressor', hparams.reg_dir_params)
-            self.reg_motion = create_model('PlausibilityRegressor', hparams.reg_motion_params)
-            self.reg_dir.load_state_dict(delete_prefix_from_state_dict(torch.load(hparams.reg_dir_path, map_location=self.device)['state_dict'], 'model.'))
-            self.reg_motion.load_state_dict(delete_prefix_from_state_dict(torch.load(hparams.reg_motion_path, map_location=self.device)['state_dict'], 'model.'))
-            self.reg_dir.requires_grad_(False)
-            self.reg_motion.requires_grad_(False)
-
         if hasattr(hparams, 'has_teacher') and hparams.has_teacher:
             self.model_teacher = create_model(hparams.model_name, hparams.model_params)
             if hasattr(hparams, 'teacher_checkpoint_path') and hparams.teacher_checkpoint_path is not None:
@@ -203,9 +195,9 @@ class LitModel(pl.LightningModule):
             ax_gt_xy.plot(p[0], p[1], color=color, marker='o')
             ax_gt_xz.plot(p[0], p[2], color=color, marker='o')
             ax_gt_yz.plot(p[1], p[2], color=color, marker='o')
-            ax_pred_3d.scatter(p_hat[0], p_hat[2], p_hat[1], color=color, marker='o')
-            ax_gt_3d.scatter(p[0], p[2], p[1], color=color, marker='o')
-        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 2], x[0, 0, :, 1], 'g', marker='o')
+            ax_pred_3d.scatter(p_hat[0], p_hat[1], p_hat[2], color=color, marker='o')
+            ax_gt_3d.scatter(p[0], p[1], p[2], color=color, marker='o')
+        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 1], x[0, 0, :, 2], 'g', marker='o')
 
         fig.tight_layout()
 
@@ -296,147 +288,6 @@ class LitModel(pl.LightningModule):
                 y_hat = self.model(x)
                 loss = self.loss(y_hat, y)
                 losses = {'loss': loss}
-        elif self.hparams.model_name in ['P4TransformerSimCC']:
-            c_hat, y_hat = self.model(x)
-
-            n = self.model.cube_len
-            bin_width = 3.0 / n
-            x_bin_indices = ((y[..., 0] + 1.5) / bin_width).clamp(0, n-1).floor().to(torch.long)
-            y_bin_indices = (y[..., 1] / bin_width).clamp(0, n-1).floor().to(torch.long)
-            z_bin_indices = ((y[..., 2] + 1.5) / bin_width).clamp(0, n-1).floor().to(torch.long)
-            c = torch.stack([x_bin_indices, y_bin_indices, z_bin_indices], dim=-1).to(torch.long) # B 1 J 3
-            loss = self.loss(c_hat, c)
-            losses = {'loss': loss}
-        elif self.hparams.model_name in ['P4TransformerMotion']:
-            batch_sup = batch['sup']
-            batch_unsup = batch['unsup']
-
-            x_sup = batch_sup['point_clouds']
-            y_sup = batch_sup['keypoints']
-            x_unsup = batch_unsup['point_clouds']
-
-            m_sup_hat = self.model(x_sup) # B 1 N 3
-            my_sup = y_sup[:, 1:2, :, :3] - y_sup[:, 0:1, :, :3] # B 1 J 3
-
-            dists = torch.norm(x_sup[:, 0, :, :3].unsqueeze(2) - y_sup[:, 0, :, :3].unsqueeze(1), dim=-1) # B N J
-            bottom_k_dists, bottom_k_indices = torch.topk(dists, k=3, dim=-1, largest=False) # B N k
-            bottom_k_weights = torch.softmax(-bottom_k_dists, dim=-1) # B N k
-            # print(my_sup.shape, bottom_k_indices.shape, bottom_k_weights.shape)
-            B, N, K = bottom_k_indices.shape
-            bottom_k_indices_ = bottom_k_indices.reshape(B, N * K, 1).expand(-1, -1, my_sup.shape[-1]) # B N*k 3
-            nearest_m = my_sup[:, 0].gather(1, bottom_k_indices_).reshape(B, N, K, my_sup.shape[-1]) # B N k 3
-            nearest_m = (nearest_m * bottom_k_weights.unsqueeze(-1)).sum(dim=-2) # B N 3
-
-            min_dists, _ = torch.min(dists, dim=-1) # B N, B N
-            mask_dist = (min_dists < 0.1).unsqueeze(1).unsqueeze(-1) # B 1 N 1
-            # min_indices_expanded = min_indices.unsqueeze(-1).expand(-1, -1, m_sup_hat.shape[-1]) # B N 3
-            # nearest_m = my_sup[:, 0].gather(1, min_indices_expanded).unsqueeze(1) # B N 3
-
-            loss_sup = F.mse_loss(m_sup_hat * mask_dist, nearest_m * mask_dist)
-
-            m_unsup_hat = self.model(x_unsup) # B 1 N 3
-            x0_unsup = x_unsup[:, 0:1, :, :3] # B 1 N 3
-            x1_unsup = x_unsup[:, 1:2, :, :3] # B 1 N 3
-            x1_unsup_hat = x0_unsup + m_unsup_hat # B 1 N 3
-
-            y_hat = y_sup
-
-            chamfer_dist = ChamferDistance()
-            dist1, dist2 = chamfer_dist(x1_unsup_hat[:, 0, :, :3], x1_unsup[:, 0, :, :3])
-            loss_chamfer = dist1.mean() + dist2.mean()
-
-            loss_reg = torch.norm(m_unsup_hat, dim=-1).mean()
-
-            loss = loss_sup + self.hparams.w_chamfer * loss_chamfer + self.hparams.w_reg * loss_reg
-            
-            losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_chamfer': loss_chamfer, 'loss_reg': loss_reg}
-
-        elif self.hparams.model_name in ['P4TransformerFlow']:
-            # B, T, J, C = y.shape
-            y0 = y[:, 0:1, ...]
-            loc0 = y0[:, :, 8:9, :]
-            pose0 = y0 - loc0
-            y1 = y[:, 1:2, ...]
-            loc1 = y1[:, :, 8:9, :]
-            pose1 = y1 - loc1
-            flow = y[:, 1:, ...] - y[:, :-1, ...]
-
-            pose_hat0, loc_hat0, flow_hat0 = self.model(x[:, :-1, ...])
-            pose_hat1, loc_hat1, flow_hat1 = self.model(x[:, 1:, ...])
-
-            l_pose = self.loss(pose_hat0, pose0) + self.loss(pose_hat1, pose1)
-            l_loc = self.loss(loc_hat0, loc0) + self.loss(loc_hat1, loc1)
-            l_flow = self.loss(flow_hat0, flow) + self.loss(flow_hat1[:, :-1, ...], flow[:, 1:, ...])
-            l_con = self.loss(flow_hat0[:, 1:, ...], flow_hat1[:, :-1, ...])
-
-            # y0_hat = pose_hat0 + loc_hat0
-            # y1_hat = pose_hat1 + loc_hat1
-            # y0_hat1 = y0_hat.clone() + flow_hat0[:, 0:1, ...]
-            # l_con = self.loss(y0_hat1, y1_hat)
-
-            y_hat = pose_hat0 + loc_hat0
-            y = y0
-            # flow_hat2 = y_hat[:, 1:, ...] - y_hat[:, :-1, ...]
-            # l_flow2 = self.loss(flow_hat2, flow)
-            # accum_flow = torch.cumsum(flow_hat0[:, :-1, ...], dim=1)
-            # y_hat = torch.cat([y0_hat, y0_hat + accum_flow], dim=1)
-            loss = self.hparams.w_loc * l_loc + self.hparams.w_flow * l_flow + self.hparams.w_con * l_con
-            losses = {'loss': loss, 'l_pose': l_pose, 'l_loc': l_loc, 'l_flow': l_flow, 'l_con': l_con}
-        elif self.hparams.model_name in ['P4TransformerFlowDA']:
-            x_ref = batch['ref_point_clouds']
-            y0 = y[:, 0:1, ...]
-            loc0 = y0[:, :, 8:9, :]
-            pose0 = y0 - loc0
-            y1 = y[:, 1:2, ...]
-            loc1 = y1[:, :, 8:9, :]
-            pose1 = y1 - loc1
-            flow = y[:, 1:, ...] - y[:, :-1, ...]
-
-            flow_lidar0, loc_lidar0, flow_trans0, loc_trans0, l_rec_lidar0, l_rec_mmwave0, l_conf0 = self.model((x[:, :-1, ...], x_ref[:, :-1, ...]), mode='train')
-            flow_lidar1, loc_lidar1, flow_trans1, loc_trans1, l_rec_lidar1, l_rec_mmwave1, l_conf1 = self.model((x[:, 1:, ...], x_ref[:, 1:, ...]), mode='train')
-            l_flow = self.loss(flow_lidar0, flow) + self.loss(flow_trans0, flow) + self.loss(flow_lidar1[:, :-1, ...], flow[:, 1:, ...]) + self.loss(flow_trans1[:, :-1, ...], flow[:, 1:, ...])
-            l_loc = self.loss(loc_lidar0, loc0) + self.loss(loc_trans0, loc0) + self.loss(loc_lidar1, loc1) + self.loss(loc_trans1, loc1)
-            l_con = self.loss(flow_lidar0[:, 1:, ...], flow_lidar1[:, :-1, ...]) + self.loss(flow_trans0[:, 1:, ...], flow_trans1[:, :-1, ...])
-            l_rec_lidar = l_rec_lidar0 + l_rec_lidar1
-            l_rec_mmwave = l_rec_mmwave0 + l_rec_mmwave1
-            l_conf = l_conf0 + l_conf1
-
-            y_hat = pose0 + loc_lidar0
-            y = y0
-
-            loss = self.hparams.w_loc * l_loc + self.hparams.w_flow * l_flow + self.hparams.w_rec * (l_rec_lidar + l_rec_mmwave) + self.hparams.w_conf * l_conf
-            losses = {'loss': loss, 'l_flow': l_flow, 'l_loc': l_loc, 'l_rec_lidar': l_rec_lidar, 'l_rec_mmwave': l_rec_mmwave, 'l_conf': l_conf}
-
-        elif self.hparams.model_name in ['P4TransformerDG', 'P4TransformerDG2']:
-            x_ref = batch['ref_point_clouds']
-            if torch.rand(1).item() < 0.5:
-                perm = torch.randperm(x_ref.shape[-2])
-                num2exchange = torch.randint(0, x_ref.shape[-2], (1,)).item()
-                x_ = torch.cat((x[..., perm[:num2exchange], :3], x_ref[..., perm[num2exchange:], :3]), dim=-2)
-                x_ref_ = torch.cat((x_ref[..., perm[:num2exchange], :3], x[..., perm[num2exchange:], :3]), dim=-2)
-                x = x_
-                x_ref = x_ref_
-                # print(x.shape, x_ref.shape)
-            y_ref = batch['ref_keypoints']
-            y_hat, y_hat_ref, l_rec = self.model((x, x_ref))
-            l_pc = self.loss(y_hat, y)
-            l_pc2 = self.loss(y_hat_ref, y_ref)
-            loss = l_pc + l_pc2 + self.hparams.w_rec * l_rec #+ self.hparams.w_mem * l_mem # + w_con * l_con
-            losses = {'loss': loss, 'l_pc': l_pc, 'l_pc2': l_pc2, 'l_rec': l_rec}
-        
-        elif self.hparams.model_name in ['P4TransformerLidarMMWave']:
-            x_ref = batch['point_clouds_trans']
-            if torch.rand(1).item() < 0.1:
-                x = None
-            else:
-                x_ref = None
-
-            y_hat = self.model(x, x_ref)
-            loss = self.loss(y_hat, y)
-            losses = {'loss': loss}
-
-            if x is None:
-                x = batch['point_clouds']
 
         elif self.hparams.model_name == 'PoseTransformer':
             #TODO: Implement the loss function of posetran
@@ -583,42 +434,16 @@ class LitModel(pl.LightningModule):
                     pred = result['pred'][i]
                     input = result['input'][i]
                     seq_idx = int(result['seq_idx'][i].item())
-                    if self.hparams.model_name in ['P4TransformerFlow']:
-                        flow = result['flow'][i]
                     if seq_idx != last_seq_idx:
                         last_seq_idx = seq_idx
                         split_seqs.append({'keypoints_pred': [], 'input': []})
-                        if self.hparams.model_name in ['P4TransformerFlow']:
-                            split_seqs[-1]['flow'] = []
                         split_idxs.append(seq_idx)
                     split_seqs[-1]['keypoints_pred'].append(pred)
                     split_seqs[-1]['input'].append(input)
-                    if self.hparams.model_name in ['P4TransformerFlow']:
-                        split_seqs[-1]['flow'].append(flow)
 
             for i in range(len(split_seqs)):
                 split_seqs[i]['input'] = np.array(split_seqs[i]['input'])[:, 0, ...]
-                
-                kps_pred = np.array(split_seqs[i]['keypoints_pred'])
-                N, T, J, D = kps_pred.shape
-                kps_pred_ = np.zeros((N + T - 1, J, D))
-                for j in range(T):
-                    kps_pred_[j:j+N] += kps_pred[:, j]
-                for j in range(T):
-                    kps_pred_[j] *= (T / (j + 1))
-                kps_pred = kps_pred_[:N]
-                split_seqs[i]['keypoints_pred'] = kps_pred / T
-
-                if self.hparams.model_name in ['P4TransformerFlow']:
-                    flow = np.array(split_seqs[i]['flow'])
-                    N, T, J, D = flow.shape
-                    flow_ = np.zeros((N + T - 1, J, D))
-                    for j in range(T):
-                        flow_[j:j+N] += flow[:, j]
-                    for j in range(T):
-                        flow_[j] *= (T / (j + 1))
-                    flow = flow_[:N]
-                    split_seqs[i]['flow'] = flow / T
+                split_seqs[i]['keypoints_pred'] = np.array(split_seqs[i]['keypoints_pred'])[:, 0, ...]
 
             with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
                 pickle.dump(split_seqs, f)
