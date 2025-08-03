@@ -73,23 +73,7 @@ def main(args):
     )
 
     if bool(args.predict):
-        import numpy as np
-        import pickle
-        predictions = trainer.predict(model, datamodule=dm, ckpt_path=None if args.only_load_model else args.checkpoint_path, return_predictions=True)
-        data_out = {}
-        for pred in predictions:
-            if pred['name'] not in data_out:
-                data_out[pred['name']] = {'raw': [], 'keypoints': [], 'point_clouds': []}
-            data_out[pred['name']]['raw'].append(pred)
-
-        for name in data_out:
-            data_out[name]['raw'] = sorted(data_out[name]['raw'], key=lambda x: x['index'][0])
-            data_out[name]['keypoints'] = np.concatenate([pred['keypoints'] for pred in data_out[name]['raw']], axis=0)
-            data_out[name]['point_clouds'] = np.concatenate([pred['point_clouds'] for pred in data_out[name]['raw']], axis=0)
-            del data_out[name]['raw']
-
-        with open(os.path.join('logs', args.exp_name, args.version, 'predictions.pkl'), 'wb') as f:
-            pickle.dump(data_out, f)
+        trainer.predict(model, datamodule=dm, ckpt_path=None if args.only_load_model else args.checkpoint_path, return_predictions=True)
     elif bool(args.test):
         trainer.test(model, datamodule=dm, ckpt_path=None if args.only_load_model else args.checkpoint_path)
     else:

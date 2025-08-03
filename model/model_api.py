@@ -3,6 +3,8 @@ import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
 from pl_bolts.optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 import pickle
@@ -57,7 +59,7 @@ class UnsupLoss(torch.nn.Module):
         my_hat_dynamic = (y_hat1 - y_hat0) * mask_dist_pos
         my_norm_hat_dynamic = torch.norm(my_hat_dynamic, p=2, dim=-1)
         my_norm_hat_dynamic = my_norm_hat_dynamic[my_norm_hat_dynamic > 0]
-        loss_dynamic = torch.relu(0.05 - my_norm_hat_dynamic).mean()
+        loss_dynamic = torch.relu(0.1 - my_norm_hat_dynamic).mean()
         
         my_hat_static = (y_hat1 - y_hat0) * mask_dist_neg
         my_hat_static = my_hat_static[my_hat_static > 0]
@@ -101,7 +103,7 @@ class LitModel(pl.LightningModule):
         if hparams.checkpoint_path is not None:
             self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'], strict=False)
         self.loss = create_loss(hparams.loss_name, hparams.loss_params)
-        if hparams.save_when_test:
+        if hparams.save_when_test or hparams.predict:
             self.results = []
 
         if hasattr(hparams, 'has_teacher') and hparams.has_teacher:
@@ -117,7 +119,7 @@ class LitModel(pl.LightningModule):
 
     def _recover_point_cloud(self, x, center, radius):
         # print(radius)
-        # x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        # x[..., :3] = x[..., :3] + center.unsqueeze(-2).unsqueeze(-2)
         x = torch2numpy(x)
         return x
     
@@ -420,33 +422,32 @@ class LitModel(pl.LightningModule):
         x = self._recover_point_cloud(x, c, r)
         y_hat = self._recover_skeleton(y_hat, c, r)
         
-        result = {'pred': y_hat, 'input': x, 'seq_idx': torch2numpy(si)}
+        result = {'pred': y_hat, 'input': x, 'seq_idx': torch2numpy(si), 'name': batch['name']}
         self.results.append(result)
 
     def on_predict_end(self):
-        if self.hparams.save_when_test:
-            split_seqs = []
-            split_idxs = []
-            last_seq_idx = -1
+        split_seqs = []
+        split_idxs = []
+        last_seq_idx = -1
 
-            for result in self.results:
-                for i in range(len(result['pred'])):
-                    pred = result['pred'][i]
-                    input = result['input'][i]
-                    seq_idx = int(result['seq_idx'][i].item())
-                    if seq_idx != last_seq_idx:
-                        last_seq_idx = seq_idx
-                        split_seqs.append({'keypoints_pred': [], 'input': []})
-                        split_idxs.append(seq_idx)
-                    split_seqs[-1]['keypoints_pred'].append(pred)
-                    split_seqs[-1]['input'].append(input)
+        for result in self.results:
+            for i in range(len(result['pred'])):
+                pred = result['pred'][i]
+                input = result['input'][i]
+                seq_idx = int(result['seq_idx'][i].item())
+                if seq_idx != last_seq_idx:
+                    last_seq_idx = seq_idx
+                    split_seqs.append({'keypoints_pred': [], 'input': [], 'name': result['name']})
+                    split_idxs.append(seq_idx)
+                split_seqs[-1]['keypoints_pred'].append(pred)
+                split_seqs[-1]['input'].append(input)
 
-            for i in range(len(split_seqs)):
-                split_seqs[i]['input'] = np.array(split_seqs[i]['input'])[:, 0, ...]
-                split_seqs[i]['keypoints_pred'] = np.array(split_seqs[i]['keypoints_pred'])[:, 0, ...]
+        for i in range(len(split_seqs)):
+            split_seqs[i]['input'] = np.array(split_seqs[i]['input'])[:, 0, ...]
+            split_seqs[i]['keypoints_pred'] = np.array(split_seqs[i]['keypoints_pred'])[:, 0, ...]
 
-            with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
-                pickle.dump(split_seqs, f)
+        with open(os.path.join('logs', self.hparams.exp_name, self.hparams.version, 'results.pkl'), 'wb') as f:
+            pickle.dump(split_seqs, f)
 
         return super().on_predict_end()
 
