@@ -18,6 +18,7 @@ from model.chamfer_distance import ChamferDistance
 from loss.mpjpe import mpjpe as mpjpe_mmwave
 from misc.utils import torch2numpy, import_with_str, delete_prefix_from_state_dict
 from misc.skeleton import ITOPSkeleton, JOINT_COLOR_MAP
+from misc.vis import visualize_sample
 
 def create_model(model_name, model_params):
     if model_params is None:
@@ -153,59 +154,12 @@ class LitModel(pl.LightningModule):
         ax.set_ylim(min_z - range_z * 0.1, max_z + range_z * 0.1)
 
     def _vis_pred_gt_keypoints(self, x, y, y_hat):
-        fig = plt.figure()
-        ax_pred_xy = fig.add_subplot(331)
-        ax_pred_xz = fig.add_subplot(332)
-        ax_pred_yz = fig.add_subplot(333)
-        ax_gt_xy = fig.add_subplot(334)
-        ax_gt_xz = fig.add_subplot(335)
-        ax_gt_yz = fig.add_subplot(336)
-        ax_pred_3d = fig.add_subplot(337, projection='3d')
-        ax_gt_3d = fig.add_subplot(338, projection='3d')
-        ax_pc = fig.add_subplot(339, projection='3d')
-
-        ax_pred_xy.set_aspect('equal')
-        ax_pred_xz.set_aspect('equal')
-        ax_pred_yz.set_aspect('equal')
-        ax_gt_xy.set_aspect('equal')
-        ax_gt_xz.set_aspect('equal')
-        ax_gt_yz.set_aspect('equal')
-        
-        y_hat_bounds = self._get_bounds(y_hat[0, 0])
-        y_bounds = self._get_bounds(y[0, 0])
-        x_bounds = self._get_bounds(x[0, 0])
-
-        self._set_3d_ax_limits(ax_pred_3d, y_hat_bounds)
-        self._set_3d_ax_limits(ax_gt_3d, y_bounds)
-        self._set_3d_ax_limits(ax_pc, x_bounds)
-
-        ax_pred_xy.set_title('Predicted XY')
-        ax_pred_xz.set_title('Predicted XZ')
-        ax_pred_yz.set_title('Predicted YZ')
-        ax_gt_xy.set_title('GT XY')
-        ax_gt_xz.set_title('GT XZ')
-        ax_gt_yz.set_title('GT YZ')
-        ax_pred_3d.set_title('Predicted 3D')
-        ax_gt_3d.set_title('GT 3D')
-        ax_pc.set_title('Point Cloud')
-
-        for i, (p_hat, p) in enumerate(zip(y_hat[0, 0], y[0, 0])):
-            color = JOINT_COLOR_MAP[i]
-            ax_pred_xy.plot(p_hat[0], p_hat[1], color=color, marker='o')
-            ax_pred_xz.plot(p_hat[0], p_hat[2], color=color, marker='o')
-            ax_pred_yz.plot(p_hat[1], p_hat[2], color=color, marker='o')
-            ax_gt_xy.plot(p[0], p[1], color=color, marker='o')
-            ax_gt_xz.plot(p[0], p[2], color=color, marker='o')
-            ax_gt_yz.plot(p[1], p[2], color=color, marker='o')
-            ax_pred_3d.scatter(p_hat[0], p_hat[1], p_hat[2], color=color, marker='o')
-            ax_gt_3d.scatter(p[0], p[1], p[2], color=color, marker='o')
-        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 1], x[0, 0, :, 2], 'g', marker='o')
-
-        fig.tight_layout()
+        sample = x[0][0][:, [0, 2, 1]], y[0][0][:, [0, 2, 1]], y_hat[0][0][:, [0, 2, 1]]
+        fig = visualize_sample(sample, edges=ITOPSkeleton.bones, point_size=2, joint_size=25, linewidth=2, padding=0.1)
 
         # wandb.log({'keypoints': wandb.Image(fig)})
         tensorboard = self.logger.experiment
-        tensorboard.add_figure('keypoints', fig, global_step=self.global_step)
+        tensorboard.add_figure('sample', fig, global_step=self.global_step)
         plt.close(fig)
         plt.clf()
 
@@ -216,7 +170,7 @@ class LitModel(pl.LightningModule):
         else:
             x = batch['point_clouds']
             y = batch['keypoints']
-        if self.hparams.model_name in ['P4Transformer', 'P4TransformerAnchor', 'SPiKE', 'PoseTransformer']:
+        if self.hparams.model_name in ['P4Transformer', 'P4TransformerAnchor', 'SPiKE', 'PoseTransformer', 'PointTransformer']:
             if hasattr(self.hparams, 'has_teacher') and self.hparams.has_teacher:
                 batch_sup = batch['sup']
                 batch_unsup = batch['unsup']
@@ -317,7 +271,7 @@ class LitModel(pl.LightningModule):
         x = batch['point_clouds']
         y = batch['keypoints']
         
-        y_hat = self.model(x)
+        y_hat = self.model(x[..., :3])
         return x, y, y_hat
 
     def training_step(self, batch, batch_idx):
@@ -359,7 +313,7 @@ class LitModel(pl.LightningModule):
         log_dict = {'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}
         self.log_dict(log_dict, sync_dist=True)
 
-        if batch_idx == 0:
+        if batch_idx == 10:
             self._vis_pred_gt_keypoints(x, y, y_hat)
     
     def test_step(self, batch, batch_idx):
@@ -375,7 +329,8 @@ class LitModel(pl.LightningModule):
 
         log_dict = {'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}
         self.log_dict(log_dict, sync_dist=True)
-        if batch_idx == 0:
+        
+        if batch_idx == 10:
             self._vis_pred_gt_keypoints(x, y, y_hat)
 
         if self.hparams.save_when_test:

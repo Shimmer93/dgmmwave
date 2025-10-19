@@ -11,7 +11,7 @@ epochs: &epochs 100
 train_dataset:
   name: ReferenceDataset
   params:
-    data_path: &data_path data/hmpear_mm_mmbody3.pkl
+    data_path: &data_path data/lidarhuman26m_mm_mmbody3.pkl
     split: [train, val]
     ref_data_path: data/mmbody.pkl
     ref_split: [train, val]
@@ -30,8 +30,8 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
-    split: test
+    data_path: data/mmfi.pkl
+    split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -74,12 +74,12 @@ model_params:
 # --------------------------------------
 loss_name: UnsupLoss
 loss_params:
-  thres_static: 0.15
+  thres_static: 0.2
   thres_dist: 0.05
 # weight for auxiliary losses
 w_dynamic: 0.01
 w_static: 0.01
-w_pseudo: 0.1
+w_pseudo: 1.0
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------
@@ -88,34 +88,24 @@ train_pipeline: &train_pipeline
     params: 
       pad_type: 'start'
       clip_len: 6
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: Normalize
     params:
       feat_scale: null
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   # - name: ToITOP
   #   params: null
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
       radius: 1.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: AddNoisyPoints
     params:
       add_std: 0.2
       num_added: 32
       zero_centered: false
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   # - name: DropPointsAtSegmentedJoints
   #   params:
   #     max_num2drop: 14
@@ -128,29 +118,23 @@ train_pipeline: &train_pipeline
   #     max_dist_threshold: 0
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.2
       max_dist_threshold: 0.1
+      min_dist_threshold: 0.02
   - name: RandomScale
     params:
       scale_min: 0.9
       scale_max: 1.1
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: RandomRotate
     params:
       deg: true
       angle_min: -10
       angle_max: 10
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: RandomTranslate
     params:
       translate_range: 0.01
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: ReduceKeypointLen
     params:
       only_one: false
@@ -158,23 +142,17 @@ train_pipeline: &train_pipeline
   - name: Pad
     params:
       max_len: 256
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: RandomJitter
     params:
       jitter_std: 0.05
     prob: 0.5
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
   - name: ToTensor
     params: null
-    ori_key: point_clouds
-    more_keys: [point_clouds_trans]
 val_pipeline: &val_pipeline
   - name: UniformSample
     params:
       pad_type: 'start'
-      clip_len: 5
+      clip_len: 6
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
@@ -187,6 +165,10 @@ val_pipeline: &val_pipeline
     params: 
       outlier_type: 'box'
       radius: 1.5
+  - name: ConvertToRefinedMMWavePointCloud
+    params:
+      max_dist_threshold: 0.1
+      min_dist_threshold: 0.02
   - name: ReduceKeypointLen
     params:
       only_one: true

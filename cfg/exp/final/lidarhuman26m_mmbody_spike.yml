@@ -4,24 +4,24 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: &epochs 100
+epochs: &epochs 25
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
 train_dataset:
   name: ReferenceDataset
   params:
-    data_path: &data_path data/hmpear_mm_mmfi5.pkl
+    data_path: &data_path data/lidarhuman26m_mm_mmbody3.pkl
     split: [train, val]
-    ref_data_path: data/mmfi.pkl
-    ref_split: [train_rdn_p3, val_rdn_p3]
+    ref_data_path: data/mmbody.pkl
+    ref_split: [train, val]
     ref_ratio: 0.1
     both: true
 unsup_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmfi.pkl
-    split: [train_rdn_p3, val_rdn_p3]
+    data_path: data/mmbody.pkl
+    split: [train, val]
 val_dataset:
   name: TemporalDataset
   params:
@@ -32,8 +32,6 @@ test_dataset:
   params:
     data_path: data/mmfi.pkl
     split: test_rdn_p3
-    # data_path: data/mmbody.pkl
-    # split: test #_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -46,7 +44,7 @@ optim_params:
 # --------------------------------------
 sched_name: LinearWarmupCosineAnnealingLR
 sched_params:
-  warmup_epochs: 20
+  warmup_epochs: 5
   max_epochs: *epochs
   warmup_start_lr: 0.00001
   eta_min: 0.00001
@@ -56,21 +54,19 @@ sched_params:
 has_teacher: true
 # teacher_checkpoint_path: /home/zpengac/mmwave/dgmmwave/logs/hmpear_mmfi_unsup_both_teacher/20250701_161111/P4Transformer-epoch=46-val_mpjpe=0.1528.ckpt
 mode: train
-model_name: P4Transformer
+model_name: SPiKE
 model_params:
-  radius: 0.7
+  radius: 0.2
   nsamples: 32
-  spatial_stride: 8
-  temporal_kernel_size: 3
-  temporal_stride: 1
-  emb_relu: false
+  spatial_stride: 32
   dim: 1024
   depth: 5
   heads: 8
-  dim_head: 128
+  dim_head: 256
   mlp_dim: 2048
-  output_dim: 45
-  features: 1
+  num_coord_joints: 45
+  dropout1: 0.0
+  dropout2: 0.0
 # --------------------------------------
 # Loss parameters
 # --------------------------------------
@@ -121,7 +117,7 @@ train_pipeline: &train_pipeline
   - name: ConvertToRefinedMMWavePointCloud
     params:
       max_dist_threshold: 0.1
-      min_dist_threshold: 0
+      min_dist_threshold: 0.02
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -170,7 +166,7 @@ val_pipeline: &val_pipeline
   - name: ConvertToRefinedMMWavePointCloud
     params:
       max_dist_threshold: 0.1
-      min_dist_threshold: 0
+      min_dist_threshold: 0.02
   - name: ReduceKeypointLen
     params:
       only_one: true

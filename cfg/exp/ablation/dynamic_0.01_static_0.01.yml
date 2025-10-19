@@ -25,11 +25,13 @@ unsup_dataset:
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
+    data_path: data/hmpear_mm_mmfi5.pkl
     split: test
 test_dataset:
   name: TemporalDataset
   params:
+    # data_path: data/mmfi.pkl
+    # split: test_rdn_p3
     data_path: data/mmbody.pkl
     split: test
 # --------------------------------------
@@ -73,7 +75,7 @@ model_params:
 # --------------------------------------
 loss_name: UnsupLoss
 loss_params:
-  thres_static: 0.15
+  thres_static: 0.2
   thres_dist: 0.05
 # weight for auxiliary losses
 w_dynamic: 0.01
@@ -127,8 +129,8 @@ train_pipeline: &train_pipeline
   #     max_dist_threshold: 0
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.2
       max_dist_threshold: 0.1
+      max_dist_threshold: 0.02
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -171,31 +173,70 @@ train_pipeline: &train_pipeline
     more_keys: [point_clouds_trans]
 val_pipeline: &val_pipeline
   - name: UniformSample
-    params:
+    params: 
       pad_type: 'start'
-      clip_len: 5
+      clip_len: 6
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-  - name: ToITOP
-    params: null
   - name: Normalize
     params:
       feat_scale: null
+  # - name: ToITOP
+  #   params: null
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
       radius: 1.5
+  # - name: DropPointsAtSegmentedJoints
+  #   params:
+  #     max_num2drop: 14
+  #   prob: 0.9
+  # - name: GenerateSegmentationGroundTruth
+  #   params:
+  #     padding: 0.2
+  # - name: ConvertToMMWavePointCloud
+  #   params:
+  #     max_dist_threshold: 0
+  - name: ConvertToRefinedMMWavePointCloud
+    params:
+      max_dist_threshold: 0.1
+      max_dist_threshold: 0.02
   - name: ReduceKeypointLen
     params:
-      only_one: true
-      keep_type: 'end'
-      frame_to_reduce: 0
+      only_one: false
+      indexs_to_keep: [4]
   - name: Pad
     params:
       max_len: 256
   - name: ToTensor
     params: null
+  # - name: UniformSample
+  #   params:
+  #     pad_type: 'start'
+  #     clip_len: 5
+  # - name: GetCentroid
+  #   params: 
+  #     centroid_type: 'kps'
+  # - name: ToITOP
+  #   params: null
+  # - name: Normalize
+  #   params:
+  #     feat_scale: null
+  # - name: RemoveOutliers
+  #   params: 
+  #     outlier_type: 'box'
+  #     radius: 1.5
+  # - name: ReduceKeypointLen
+  #   params:
+  #     only_one: true
+  #     keep_type: 'end'
+  #     frame_to_reduce: 0
+  # - name: Pad
+  #   params:
+  #     max_len: 256
+  # - name: ToTensor
+  #   params: null
 test_pipeline: &test_pipeline
   - name: UniformSample
     params:

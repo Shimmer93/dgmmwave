@@ -149,7 +149,7 @@ class Backbone(nn.Module):
         return points, xyz_and_feats
 
 
-class PointTransformerReg(nn.Module):
+class PointTransformer(nn.Module):
     def __init__(self, input_dim = 5, nblocks = 5, nneighbor = 16, transformer_dim = 128, n_p = 17):
         super().__init__()
         self.backbone = Backbone(
@@ -188,6 +188,7 @@ class PointTransformerReg(nn.Module):
 
     
     def forward(self, x):
+        x = x[..., :3]
         if len(x.shape) == 4: 
             b, t, n, c = x.shape
             x = x = x.view(b, t*n, c)
@@ -200,7 +201,7 @@ class PointTransformerReg(nn.Module):
         pts = self.fc3(feat)
 
         
-        return pts
+        return pts.unsqueeze(1)
     
     def get_positional_embeddings1(self, sequence_length, d):
         result = np.ones([1, sequence_length, d])

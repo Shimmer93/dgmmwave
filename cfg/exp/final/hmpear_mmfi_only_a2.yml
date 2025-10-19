@@ -31,7 +31,7 @@ test_dataset:
   name: TemporalDataset
   params:
     data_path: data/mmbody.pkl
-    split: test
+    split: test #_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -74,12 +74,12 @@ model_params:
 # --------------------------------------
 loss_name: UnsupLoss
 loss_params:
-  thres_static: 0.15
+  thres_static: 0.2
   thres_dist: 0.05
 # weight for auxiliary losses
 w_dynamic: 0.01
 w_static: 0.01
-w_pseudo: 0.1
+w_pseudo: 1.0
 # --------------------------------------
 # Augmentation parameters
 # --------------------------------------

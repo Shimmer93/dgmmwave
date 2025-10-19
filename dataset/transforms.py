@@ -177,6 +177,17 @@ class ConvertToRefinedMMWavePointCloud():
         keypoints = sample['keypoints']
         point_clouds = sample['point_clouds']
 
+        # Get bounding box coordinates from concatenated point clouds
+        pc_cat = np.concatenate(point_clouds, axis=0)
+        min_coords = np.min(pc_cat[:, :3], axis=0)
+        max_coords = np.max(pc_cat[:, :3], axis=0)
+        
+        # Generate 8 corner points of bounding box using meshgrid
+        anchor_points = np.array(np.meshgrid([min_coords[0], max_coords[0]], 
+                                     [min_coords[1], max_coords[1]], 
+                                     [min_coords[2], max_coords[2]])).T.reshape(-1, 3)
+        keypoints = np.concatenate([keypoints, anchor_points[np.newaxis, :, :].repeat(keypoints.shape[0], axis=0)], axis=1)
+
         # T, N, _ = point_clouds.shape
         T, J, _ = keypoints.shape
         # flow_thres = self.max_dist_threshold
@@ -380,7 +391,7 @@ class RemoveOutliers():
             else:
                 raise ValueError('You should never reach here!')
             if len(inliers[0]) == 0:
-                sample['point_clouds'][i] = sample['point_clouds'][i][:1]
+                sample['point_clouds'][i] = np.zeros((2, sample['point_clouds'][i].shape[1])) #sample['point_clouds'][i][:1]
                 # num_outliers = sample['point_clouds'][i].shape[0] - len(inliers[0])
                 # print(f'{num_outliers} outliers removed')
             else:
@@ -775,46 +786,3 @@ class ComposeTransform():
         for t in self.transforms:
             sample = t(sample)
         return sample
-
-if __name__ == '__main__':
-    class hparams:
-        multi_frame = True
-        random_jitter = True
-        flip = True
-        normalize = True
-        random_scale = True
-        random_rotate = True
-        reduce_keypoint_len = True
-        pad = True
-        # parameters
-        clip_len = 5
-        num_frames = 3
-        jitter_std = 0.01
-        jitter_prob = 1
-        left_idxs = [5,6,7,11,12,13,15,17]
-        right_idxs = [2,3,4,8,9,10,14,16]
-        flip_prob = 1
-        scale_min = 0.8
-        scale_max = 1.2
-        scale_prob = 1
-        angle_min = -0.5
-        angle_max = 0.5
-        rotate_prob = 1
-        only_one = True
-        keep_type = 'middle'
-        frame_to_reduce = 0
-        max_len = 128
-
-    sample = {
-        'point_clouds': [np.random.rand(32, 3), np.random.rand(30, 3), np.random.rand(60, 3), np.random.rand(32, 3), np.random.rand(32, 3)],
-        'keypoints': [np.random.rand(18, 3), np.random.rand(18, 3), np.random.rand(18, 3), np.random.rand(18, 3), np.random.rand(18, 3)],
-        'action': 1
-    }
-    sample['keypoints'] = np.stack(sample['keypoints'])
-
-    train_transform = TrainTransform(hparams)
-    val_transform = ValTransform(hparams)
-
-    sample = train_transform(sample)
-    print(sample.keys())
-    print(sample['point_clouds'].shape, sample['keypoints'].shape)

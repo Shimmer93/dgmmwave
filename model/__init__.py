@@ -12,6 +12,7 @@ from .SPiKE.model import SPiKE
 from .Aux.plau_reg import PlausibilityRegressor
 from .Flow2Pose.ctr_gcn import Model as CTR_GCN
 from .Flow2Pose.sp_transformer import SpatialTemporalJointTransformer
+from .pointTrans import PointTransformer
 
 __all__ = [
     'P4Transformer',
@@ -28,4 +29,5 @@ __all__ = [
     'PlausibilityRegressor',
     'CTR_GCN',
     'SpatialTemporalJointTransformer',
+    'PointTransformer',
 ]
