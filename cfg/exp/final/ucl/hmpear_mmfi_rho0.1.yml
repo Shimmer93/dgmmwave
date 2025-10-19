@@ -4,29 +4,29 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: &epochs 20
+epochs: &epochs 100
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
 train_dataset:
   name: ReferenceDataset
   params:
-    data_path: &data_path data/lidarhuman26m_mm_mmbody3.pkl
+    data_path: &data_path data/hmpear_mm_mmfi5.pkl
     split: [train, val]
-    ref_data_path: data/mmbody.pkl
-    ref_split: [train, val]
+    ref_data_path: data/mmfi.pkl
+    ref_split: [train_rdn_p3, val_rdn_p3]
     ref_ratio: 0.1
     both: true
 unsup_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
-    split: [train, val]
+    data_path: data/mmfi.pkl
+    split: [train_rdn_p3, val_rdn_p3]
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
-    split: test #_rdn_p3
+    data_path: *data_path
+    split: test
 test_dataset:
   name: TemporalDataset
   params:
@@ -44,7 +44,7 @@ optim_params:
 # --------------------------------------
 sched_name: LinearWarmupCosineAnnealingLR
 sched_params:
-  warmup_epochs: 4
+  warmup_epochs: 20
   max_epochs: *epochs
   warmup_start_lr: 0.00001
   eta_min: 0.00001
@@ -75,9 +75,9 @@ model_params:
 loss_name: UnsupLoss
 loss_params:
   thres_static: 0.2
-  thres_dist: 0.05
+  thres_dist: 0.1
 # weight for auxiliary losses
-w_dynamic: 0.001
+w_dynamic: 0.01
 w_static: 0.01
 w_pseudo: 1.0
 # --------------------------------------
@@ -88,24 +88,34 @@ train_pipeline: &train_pipeline
     params: 
       pad_type: 'start'
       clip_len: 6
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: Normalize
     params:
       feat_scale: null
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   # - name: ToITOP
   #   params: null
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
       radius: 1.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: AddNoisyPoints
     params:
       add_std: 0.2
       num_added: 32
       zero_centered: false
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   # - name: DropPointsAtSegmentedJoints
   #   params:
   #     max_num2drop: 14
@@ -118,23 +128,31 @@ train_pipeline: &train_pipeline
   #     max_dist_threshold: 0
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.2
-      min_dist_threshold: 0.1
+      max_dist_threshold: 0.1
+      min_dist_threshold: 0.02
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: RandomScale
     params:
       scale_min: 0.9
       scale_max: 1.1
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: RandomRotate
     params:
       deg: true
       angle_min: -10
       angle_max: 10
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: RandomTranslate
     params:
       translate_range: 0.01
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: ReduceKeypointLen
     params:
       only_one: false
@@ -142,12 +160,18 @@ train_pipeline: &train_pipeline
   - name: Pad
     params:
       max_len: 256
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: RandomJitter
     params:
       jitter_std: 0.05
     prob: 0.5
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
   - name: ToTensor
     params: null
+    ori_key: point_clouds
+    more_keys: [point_clouds_trans]
 val_pipeline: &val_pipeline
   - name: UniformSample
     params:
@@ -156,8 +180,8 @@ val_pipeline: &val_pipeline
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-  - name: ToITOP
-    params: null
+  # - name: ToITOP
+  #   params: null
   - name: Normalize
     params:
       feat_scale: null

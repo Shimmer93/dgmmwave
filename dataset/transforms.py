@@ -67,7 +67,7 @@ class AddNoisyPoints():
             if self.zero_centered:
                 noise = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][i].shape[1]))
             else:
-                noise_center = np.random.uniform(-1, 1, sample['point_clouds'][i].shape[1])
+                noise_center = np.random.uniform(-1.5, 1.5, sample['point_clouds'][i].shape[1])
                 noise = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][i].shape[1])) + noise_center
             sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i], noise], axis=0)
         
@@ -386,6 +386,9 @@ class RemoveOutliers():
             elif self.outlier_type == 'cluster':
                 clusterer = HDBSCAN(min_cluster_size=self.min_neighbors)
                 inliers = clusterer.fit_predict(sample['point_clouds'][i][...,:3]) != -1
+                if np.sum(inliers) == 0:
+                    # keep at least one point
+                    inliers[0] = True
             elif self.outlier_type == 'box':
                 inliers = np.where(np.all(np.abs(sample['point_clouds'][i][...,:2]-np.array([[0,1]])) < self.radius, axis=1))
             else:
@@ -577,7 +580,7 @@ class RandomDrop():
 class GetCentroid():
     def __init__(self, centroid_type='minball'):
         self.centroid_type = centroid_type
-        if centroid_type not in ['none', 'zonly', 'mean', 'median', 'minball', 'dataset_median', 'kps']:
+        if centroid_type not in ['none', 'zonly', 'mean', 'median', 'minball', 'dataset_median', 'kps', 'xz']:
             raise ValueError('centroid_type must be "mean" or "minball"')
         
     def __call__(self, sample):
@@ -616,6 +619,10 @@ class GetCentroid():
         elif self.centroid_type == 'kps':
             kps_cat = np.concatenate(sample['keypoints'], axis=0)
             centroid = np.array([np.median(kps_cat[:, 0]), np.min(kps_cat[:, 1]), np.median(kps_cat[:, 2])])
+            # for i in range(len(sample['point_clouds'])):
+            #     sample['point_clouds'][i][...,1] -= 0.5
+        elif self.centroid_type == 'xz':
+            centroid = np.array([np.median(pc_dedupe[:, 0]), 0, np.median(pc_dedupe[:, 2])])
         else:
             raise ValueError('You should never reach here! centroid_type must be "mean" or "minball"')
         sample['centroid'] = centroid
@@ -653,7 +660,34 @@ class Flip():
             sample['keypoints'] = sample['keypoints'][:, indices]
             sample['keypoints'][..., 0] *= -1
         return sample
+
+class PermuteAxes():
+    def __init__(self, permutation):
+        self.permutation = permutation
+
+    def __call__(self, sample):
+        for i in range(len(sample['point_clouds'])):
+            sample['point_clouds'][i][...,:3] = sample['point_clouds'][i][..., self.permutation]
+        if 'keypoints' in sample:
+            sample['keypoints'] = sample['keypoints'][..., self.permutation]
+        return sample
     
+class SimulateLyingOnGround():
+    def __init__(self):
+        pass
+    
+    def __call__(self, sample):
+        for i in range(len(sample['point_clouds'])):
+            # rotate 90 degree centered at the centroid of the point cloud
+            centroid = np.median(sample['point_clouds'][i][...,:3], axis=0)
+            h_to_move = centroid[1] * np.random.uniform(0.5, 1.2)
+            sample['point_clouds'][i][...,:3] = (sample['point_clouds'][i][...,:3] - centroid)[..., [1,0,2]] + centroid
+            sample['point_clouds'][i][..., 1] -= h_to_move
+            if 'keypoints' in sample:
+                sample['keypoints'][i] = (sample['keypoints'][i] - centroid)[..., [1,0,2]] + centroid
+                sample['keypoints'][i][..., 1] -= h_to_move
+        return sample
+
 class ToSimpleCOCO():
     def __call__(self, sample):
         if sample['dataset_name'] in ['mmbody', 'lidarhuman26m', 'hmpear']:

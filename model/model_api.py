@@ -60,7 +60,7 @@ class UnsupLoss(torch.nn.Module):
         my_hat_dynamic = (y_hat1 - y_hat0) * mask_dist_pos
         my_norm_hat_dynamic = torch.norm(my_hat_dynamic, p=2, dim=-1)
         my_norm_hat_dynamic = my_norm_hat_dynamic[my_norm_hat_dynamic > 0]
-        loss_dynamic = torch.relu(0.1 - my_norm_hat_dynamic).mean()
+        loss_dynamic = torch.relu(0.05 - my_norm_hat_dynamic).mean()
         
         my_hat_static = (y_hat1 - y_hat0) * mask_dist_neg
         my_hat_static = my_hat_static[my_hat_static > 0]
@@ -120,7 +120,7 @@ class LitModel(pl.LightningModule):
 
     def _recover_point_cloud(self, x, center, radius):
         # print(radius)
-        # x[..., :3] = x[..., :3] + center.unsqueeze(-2).unsqueeze(-2)
+        x[..., :3] = x[..., :3] + center.unsqueeze(-2).unsqueeze(-2)
         x = torch2numpy(x)
         return x
     
@@ -386,13 +386,22 @@ class LitModel(pl.LightningModule):
         last_seq_idx = -1
 
         for result in self.results:
+            # print(result['name'], int(result['seq_idx'][0].item()))
+
+
+            # if result['name'] == '12_19_2024_15_37_08':
+            #     print('debug', int(result['seq_idx'][0].item()))
             for i in range(len(result['pred'])):
                 pred = result['pred'][i]
                 input = result['input'][i]
+                name = result['name'][i]
                 seq_idx = int(result['seq_idx'][i].item())
+                # print(f'predict: {name}, idx {seq_idx}')
+
                 if seq_idx != last_seq_idx:
                     last_seq_idx = seq_idx
-                    split_seqs.append({'keypoints_pred': [], 'input': [], 'name': result['name']})
+                    # print(f'???predict: {name}, idx {seq_idx}')
+                    split_seqs.append({'keypoints_pred': [], 'input': [], 'name': name})
                     split_idxs.append(seq_idx)
                 split_seqs[-1]['keypoints_pred'].append(pred)
                 split_seqs[-1]['input'].append(input)

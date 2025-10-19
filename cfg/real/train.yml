@@ -4,34 +4,32 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: &epochs 20
+epochs: &epochs 200
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
 train_dataset:
   name: ReferenceDataset
   params:
-    data_path: &data_path data/lidarhuman26m_mm_mmbody3.pkl
+    data_path: &data_path data/both.pkl
     split: [train, val]
-    ref_data_path: data/mmbody.pkl
-    ref_split: [train, val]
-    ref_ratio: 0.1
+    ref_data_path: data/mmfi.pkl
+    ref_split: [train_rdn_p3, val_rdn_p3]
     both: true
 unsup_dataset:
-  name: TemporalDataset
+  name: TiInferenceDataset
   params:
-    data_path: data/mmbody.pkl
-    split: [train, val]
+    data_dir: data/ti
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
-    split: test #_rdn_p3
+    data_path: data/mmfi.pkl
+    split: test_rdn_p3
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmbody.pkl
-    split: test #_rdn_p3
+    data_path: data/mmfi.pkl
+    split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -44,7 +42,7 @@ optim_params:
 # --------------------------------------
 sched_name: LinearWarmupCosineAnnealingLR
 sched_params:
-  warmup_epochs: 4
+  warmup_epochs: 20
   max_epochs: *epochs
   warmup_start_lr: 0.00001
   eta_min: 0.00001
@@ -77,7 +75,7 @@ loss_params:
   thres_static: 0.2
   thres_dist: 0.05
 # weight for auxiliary losses
-w_dynamic: 0.001
+w_dynamic: 0.01
 w_static: 0.01
 w_pseudo: 1.0
 # --------------------------------------
@@ -99,13 +97,13 @@ train_pipeline: &train_pipeline
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
-      radius: 1.5
+      radius: 2
   - name: AddNoisyPoints
     params:
-      add_std: 0.2
+      add_std: 0.3
       num_added: 32
       zero_centered: false
-    prob: 0.5
+    prob: 0.8
   # - name: DropPointsAtSegmentedJoints
   #   params:
   #     max_num2drop: 14
@@ -118,8 +116,11 @@ train_pipeline: &train_pipeline
   #     max_dist_threshold: 0
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.2
-      min_dist_threshold: 0.1
+      max_dist_threshold: 0.1
+      min_dist_threshold: 0.02
+  - name: SimulateLyingOnGround
+    params: null
+    prob: 0.5
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -133,7 +134,7 @@ train_pipeline: &train_pipeline
     prob: 0.5
   - name: RandomTranslate
     params:
-      translate_range: 0.01
+      translate_range: 0.02
     prob: 0.5
   - name: ReduceKeypointLen
     params:
@@ -152,7 +153,7 @@ val_pipeline: &val_pipeline
   - name: UniformSample
     params:
       pad_type: 'start'
-      clip_len: 6
+      clip_len: 5
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
@@ -164,11 +165,14 @@ val_pipeline: &val_pipeline
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
-      radius: 1.5
-  - name: ConvertToRefinedMMWavePointCloud
-    params:
-      max_dist_threshold: 0.1
-      min_dist_threshold: 0.02
+      radius: 2
+  # - name: ConvertToRefinedMMWavePointCloud
+  #   params:
+  #     max_dist_threshold: 0.1
+  #     min_dist_threshold: 0.02
+  - name: SimulateLyingOnGround
+    params: null
+    prob: 0.5
   - name: ReduceKeypointLen
     params:
       only_one: true
@@ -198,7 +202,10 @@ test_pipeline: &test_pipeline
   - name: RemoveOutliers
     params: 
       outlier_type: 'box'
-      radius: 1.5
+      radius: 2
+  - name: SimulateLyingOnGround
+    params: null
+    prob: 0.5
   - name: ReduceKeypointLen
     params:
       only_one: true
@@ -214,26 +221,18 @@ unsup_pipeline:
   - name: UniformSample
     params:
       pad_type: 'start'
-      clip_len: 6
+      clip_len: 5
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-  - name: ToITOP
-    params: null
-  # - name: MultiFrameAggregate
-  #   params:
-  #     num_frames: 3
   - name: Normalize
     params:
       feat_scale: null
   - name: RemoveOutliers
     params: 
-      outlier_type: 'box'
-      radius: 1.5
-  - name: ReduceKeypointLen
-    params:
-      only_one: false
-      indexs_to_keep: [4, 5]
+      outlier_type: 'radius'
+      radius: 0.25
+      min_neighbors: 3
   - name: Pad
     params:
       max_len: 256

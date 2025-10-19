@@ -2,6 +2,7 @@ from .temporal_dataset import TemporalDataset
 from .biaug_dataset import BiAugDataset
 from .posneg_dataset import PosNegDataset
 from .reference_dataset import ReferenceDataset
+from .reference_ti_dataset import ReferenceTIDataset
 from .reference_121_dataset import ReferenceOneToOneDataset
 from .ti_inference_dataset import TiInferenceDataset
 from .skl_only_dataset import SklOnlyDataset
@@ -12,6 +13,7 @@ __all__ = ['TemporalDataset',
            'BiAugDataset', 
            'PosNegDataset', 
            'ReferenceDataset', 
+           'ReferenceTIDataset', 
            'ReferenceOneToOneDataset', 
            'TiInferenceDataset',
            'SklOnlyDataset',

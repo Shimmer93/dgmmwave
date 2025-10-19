@@ -170,7 +170,7 @@ val_pipeline: &val_pipeline
   - name: UniformSample
     params:
       pad_type: 'start'
-      clip_len: 5
+      clip_len: 6
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
@@ -183,6 +183,10 @@ val_pipeline: &val_pipeline
     params: 
       outlier_type: 'box'
       radius: 1.5
+  - name: ConvertToRefinedMMWavePointCloud
+    params:
+      max_dist_threshold: 0.1
+      min_dist_threshold: 0.02
   - name: ReduceKeypointLen
     params:
       only_one: true

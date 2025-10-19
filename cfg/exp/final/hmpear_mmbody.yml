@@ -25,13 +25,13 @@ unsup_dataset:
 val_dataset:
   name: TemporalDataset
   params:
-    data_path: *data_path
-    split: test
+    data_path: data/mmfi.pkl
+    split: test_rdn_p3
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmfi.pkl
-    split: test_rdn_p3
+    data_path: data/mmbody.pkl
+    split: test #_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -156,8 +156,8 @@ val_pipeline: &val_pipeline
   - name: GetCentroid
     params: 
       centroid_type: 'kps'
-  # - name: ToITOP
-  #   params: null
+  - name: ToITOP
+    params: null
   - name: Normalize
     params:
       feat_scale: null

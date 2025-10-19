@@ -30,10 +30,10 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmfi.pkl
-    split: test_rdn_p3
-    # data_path: data/mmbody.pkl
-    # split: test #_rdn_p3
+    # data_path: data/mmfi.pkl
+    # split: test_rdn_p3
+    data_path: data/mmbody.pkl
+    split: test #_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -121,7 +121,7 @@ train_pipeline: &train_pipeline
   - name: ConvertToRefinedMMWavePointCloud
     params:
       max_dist_threshold: 0.1
-      min_dist_threshold: 0
+      min_dist_threshold: 0.02
   - name: RandomScale
     params:
       scale_min: 0.9

@@ -77,8 +77,8 @@ loss_params:
   thres_static: 0.2
   thres_dist: 0.05
 # weight for auxiliary losses
-w_dynamic: 0.001
-w_static: 0.001
+w_dynamic: 0.01
+w_static: 0.01
 w_pseudo: 1.0
 # --------------------------------------
 # Augmentation parameters
@@ -118,7 +118,7 @@ train_pipeline: &train_pipeline
   #     max_dist_threshold: 0
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.05
+      max_dist_threshold: 0.1
       min_dist_threshold: 0.02
   - name: RandomScale
     params:

@@ -4,7 +4,7 @@ pretrained: False
 sync_batchnorm: False
 clip_grad: null
 precision: 16
-epochs: &epochs 100
+epochs: &epochs 50
 # --------------------------------------
 # Dataset parameters
 # --------------------------------------
@@ -22,8 +22,10 @@ val_dataset:
 test_dataset:
   name: TemporalDataset
   params:
-    data_path: data/mmfi.pkl
-    split: test_rdn_p3
+    data_path: data/mmbody.pkl
+    split: test #_rdn_p3
+    # data_path: data/mmfi.pkl
+    # split: test_rdn_p3
 # --------------------------------------
 # Optimizer parameters
 # --------------------------------------
@@ -36,7 +38,7 @@ optim_params:
 # --------------------------------------
 sched_name: LinearWarmupCosineAnnealingLR
 sched_params:
-  warmup_epochs: 20
+  warmup_epochs: 10
   max_epochs: *epochs
   warmup_start_lr: 0.00001
   eta_min: 0.00001
@@ -97,8 +99,8 @@ train_pipeline:
   #   params: null
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.2
       max_dist_threshold: 0.1
+      max_dist_threshold: 0.02
   - name: RandomScale
     params:
       scale_min: 0.9
@@ -146,8 +148,8 @@ val_pipeline: &val_pipeline
       radius: 1.5
   - name: ConvertToRefinedMMWavePointCloud
     params:
-      max_dist_threshold: 0.2
-      max_dist_threshold: 0.1
+      max_dist_threshold: 0.02
+      max_dist_threshold: 0.01
   - name: ReduceKeypointLen
     params:
       only_one: false

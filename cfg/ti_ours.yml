@@ -66,14 +66,15 @@ predict_pipeline:
       clip_len: 5
   - name: GetCentroid
     params: 
-      centroid_type: 'median'
+      centroid_type: 'xz'
   - name: Normalize
     params:
       feat_scale: null
   - name: RemoveOutliers
     params: 
-      outlier_type: 'box'
-      radius: 1.5
+      outlier_type: 'radius'
+      radius: 0.2
+      min_neighbors: 3
   - name: Pad
     params:
       max_len: 256
