@@ -576,6 +576,25 @@ class RandomDrop():
             drop_indices = np.random.choice(sample['point_clouds'][i].shape[0], int(sample['point_clouds'][i].shape[0] * self.drop_prob), replace=False)
             sample['point_clouds'][i] = np.delete(sample['point_clouds'][i], drop_indices, axis=0)
         return sample
+    
+class RandomSample():
+    def __init__(self, ratio_min, ratio_max, num_points_thres):
+        self.ratio_min = ratio_min
+        self.ratio_max = ratio_max
+        self.num_points_thres = num_points_thres
+
+    def __call__(self, sample):
+        random_ratio = np.random.uniform(self.ratio_min, self.ratio_max)
+        
+        for i in range(len(sample['point_clouds'])):
+            if sample['point_clouds'][i].shape[0] < self.num_points_thres:
+                return sample
+            
+        for i in range(len(sample['point_clouds'])):
+            num_samples = int(sample['point_clouds'][i].shape[0] * random_ratio)
+            sample_indices = np.random.choice(sample['point_clouds'][i].shape[0], num_samples, replace=False)
+            sample['point_clouds'][i] = sample['point_clouds'][i][sample_indices]
+        return sample
 
 class GetCentroid():
     def __init__(self, centroid_type='minball'):

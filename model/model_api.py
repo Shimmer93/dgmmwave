@@ -135,24 +135,6 @@ class LitModel(pl.LightningModule):
         y_hat = self._recover_point_cloud(y_hat, center, radius)
         return x, y, y_hat
 
-    def _get_bounds(self, data):
-        all_ps = data[..., :3].reshape(-1, 3)
-        min_x, max_x = np.min(all_ps[:, 0]), np.max(all_ps[:, 0])
-        min_y, max_y = np.min(all_ps[:, 1]), np.max(all_ps[:, 1])
-        min_z, max_z = np.min(all_ps[:, 2]), np.max(all_ps[:, 2])
-        return min_x, max_x, min_y, max_y, min_z, max_z
-    
-    def _set_3d_ax_limits(self, ax, bounds):
-        min_x, max_x, min_y, max_y, min_z, max_z = bounds
-        range_x = max_x - min_x
-        range_y = max_y - min_y
-        range_z = max_z - min_z
-
-        ax.set_box_aspect([range_x, range_y, range_z])
-        ax.set_xlim(min_x - range_x * 0.1, max_x + range_x * 0.1)
-        ax.set_zlim(min_y - range_y * 0.1, max_y + range_y * 0.1)
-        ax.set_ylim(min_z - range_z * 0.1, max_z + range_z * 0.1)
-
     def _vis_pred_gt_keypoints(self, x, y, y_hat):
         sample = x[0][0][:, [0, 2, 1]], y[0][0][:, [0, 2, 1]], y_hat[0][0][:, [0, 2, 1]]
         fig = visualize_sample(sample, edges=ITOPSkeleton.bones, point_size=2, joint_size=25, linewidth=2, padding=0.1)

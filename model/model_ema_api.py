@@ -20,6 +20,7 @@ from model.chamfer_distance import ChamferDistance
 from loss.mpjpe import mpjpe as mpjpe_mmwave
 from misc.utils import torch2numpy, import_with_str, delete_prefix_from_state_dict
 from misc.skeleton import ITOPSkeleton, JOINT_COLOR_MAP
+from misc.vis import visualize_sample
 
 def create_model(model_name, model_params):
     if model_params is None:
@@ -120,17 +121,17 @@ class MeanTeacherLitModel(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
         self.save_hyperparameters(hparams)
-        self.model = create_model(hparams)
+        self.model = create_model(hparams.model_name, hparams.model_params)
+        self.model_ema = EMA(self.model, decay=hparams.ema_decay)
         if hparams.checkpoint_path is not None:
             self.load_state_dict(torch.load(hparams.checkpoint_path, map_location=self.device)['state_dict'])
-        self.model_ema = EMA(self.model, decay=hparams.ema_decay)
         self.loss = create_loss(hparams.loss_name, hparams.loss_params)
-        if hparams.save_when_test:
+        if hparams.save_when_test or hparams.predict:
             self.results = []
 
     def _recover_point_cloud(self, x, center, radius):
         # print(radius)
-        # x[..., :3] = x[..., :3] * radius.unsqueeze(-2).unsqueeze(-2) + center.unsqueeze(-2).unsqueeze(-2)
+        x[..., :3] = x[..., :3] + center.unsqueeze(-2).unsqueeze(-2)
         x = torch2numpy(x)
         return x
     
@@ -145,78 +146,13 @@ class MeanTeacherLitModel(pl.LightningModule):
         y_hat = self._recover_point_cloud(y_hat, center, radius)
         return x, y, y_hat
 
-    def _get_bounds(self, data):
-        all_ps = data[..., :3].reshape(-1, 3)
-        min_x, max_x = np.min(all_ps[:, 0]), np.max(all_ps[:, 0])
-        min_y, max_y = np.min(all_ps[:, 1]), np.max(all_ps[:, 1])
-        min_z, max_z = np.min(all_ps[:, 2]), np.max(all_ps[:, 2])
-        return min_x, max_x, min_y, max_y, min_z, max_z
-    
-    def _set_3d_ax_limits(self, ax, bounds):
-        min_x, max_x, min_y, max_y, min_z, max_z = bounds
-        range_x = max_x - min_x
-        range_y = max_y - min_y
-        range_z = max_z - min_z
-
-        ax.set_box_aspect([range_x, range_y, range_z])
-        ax.set_xlim(min_x - range_x * 0.1, max_x + range_x * 0.1)
-        ax.set_zlim(min_y - range_y * 0.1, max_y + range_y * 0.1)
-        ax.set_ylim(min_z - range_z * 0.1, max_z + range_z * 0.1)
-
     def _vis_pred_gt_keypoints(self, x, y, y_hat):
-        fig = plt.figure()
-        ax_pred_xy = fig.add_subplot(331)
-        ax_pred_xz = fig.add_subplot(332)
-        ax_pred_yz = fig.add_subplot(333)
-        ax_gt_xy = fig.add_subplot(334)
-        ax_gt_xz = fig.add_subplot(335)
-        ax_gt_yz = fig.add_subplot(336)
-        ax_pred_3d = fig.add_subplot(337, projection='3d')
-        ax_gt_3d = fig.add_subplot(338, projection='3d')
-        ax_pc = fig.add_subplot(339, projection='3d')
-
-        ax_pred_xy.set_aspect('equal')
-        ax_pred_xz.set_aspect('equal')
-        ax_pred_yz.set_aspect('equal')
-        ax_gt_xy.set_aspect('equal')
-        ax_gt_xz.set_aspect('equal')
-        ax_gt_yz.set_aspect('equal')
-        
-        y_hat_bounds = self._get_bounds(y_hat[0, 0])
-        y_bounds = self._get_bounds(y[0, 0])
-        x_bounds = self._get_bounds(x[0, 0])
-
-        self._set_3d_ax_limits(ax_pred_3d, y_hat_bounds)
-        self._set_3d_ax_limits(ax_gt_3d, y_bounds)
-        self._set_3d_ax_limits(ax_pc, x_bounds)
-
-        ax_pred_xy.set_title('Predicted XY')
-        ax_pred_xz.set_title('Predicted XZ')
-        ax_pred_yz.set_title('Predicted YZ')
-        ax_gt_xy.set_title('GT XY')
-        ax_gt_xz.set_title('GT XZ')
-        ax_gt_yz.set_title('GT YZ')
-        ax_pred_3d.set_title('Predicted 3D')
-        ax_gt_3d.set_title('GT 3D')
-        ax_pc.set_title('Point Cloud')
-
-        for i, (p_hat, p) in enumerate(zip(y_hat[0, 0], y[0, 0])):
-            color = JOINT_COLOR_MAP[i]
-            ax_pred_xy.plot(p_hat[0], p_hat[1], color=color, marker='o')
-            ax_pred_xz.plot(p_hat[0], p_hat[2], color=color, marker='o')
-            ax_pred_yz.plot(p_hat[1], p_hat[2], color=color, marker='o')
-            ax_gt_xy.plot(p[0], p[1], color=color, marker='o')
-            ax_gt_xz.plot(p[0], p[2], color=color, marker='o')
-            ax_gt_yz.plot(p[1], p[2], color=color, marker='o')
-            ax_pred_3d.scatter(p_hat[0], p_hat[1], p_hat[2], color=color, marker='o')
-            ax_gt_3d.scatter(p[0], p[1], p[2], color=color, marker='o')
-        ax_pc.scatter(x[0, 0, :, 0], x[0, 0, :, 1], x[0, 0, :, 2], 'g', marker='o')
-
-        fig.tight_layout()
+        sample = x[0][0][:, [0, 2, 1]], y[0][0][:, [0, 2, 1]], y_hat[0][0][:, [0, 2, 1]]
+        fig = visualize_sample(sample, edges=ITOPSkeleton.bones, point_size=2, joint_size=25, linewidth=2, padding=0.1)
 
         # wandb.log({'keypoints': wandb.Image(fig)})
         tensorboard = self.logger.experiment
-        tensorboard.add_figure('keypoints', fig, global_step=self.global_step)
+        tensorboard.add_figure('sample', fig, global_step=self.global_step)
         plt.close(fig)
         plt.clf()
 
@@ -269,8 +205,8 @@ class MeanTeacherLitModel(pl.LightningModule):
 
                 self.model_ema.module.eval()
                 with torch.no_grad():
-                    y_unsup_t0_pseudo, _ = self.model_ema.module(x_unsup_t0)
-                    y_unsup_t1_pseudo, _ = self.model_ema.module(x_unsup_t1)
+                    y_unsup_t0_pseudo = self.model_ema.module(x_unsup_t0)
+                    y_unsup_t1_pseudo = self.model_ema.module(x_unsup_t1)
 
                 y_unsup_t0_hat = self.model(x_unsup_t0)
                 y_unsup_t1_hat = self.model(x_unsup_t1)
@@ -278,8 +214,16 @@ class MeanTeacherLitModel(pl.LightningModule):
                 loss_pseudo = F.mse_loss(y_unsup_t0_hat, y_unsup_t0_pseudo.detach()) + \
                               F.mse_loss(y_unsup_t1_hat, y_unsup_t1_pseudo.detach())
 
-                loss = loss_sup + self.hparams.w_pseudo * loss_pseudo
-                losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_pseudo': loss_pseudo}
+                x_unsup_t0 = x_unsup[:, :-1, ...]
+                x_unsup_t1 = x_unsup[:, 1:, ...]
+                y_unsup_t0_hat = self.model(x_unsup_t0)
+                y_unsup_t1_hat = self.model(x_unsup_t1)
+
+                unsup_loss = self.loss.to(self.device)
+                loss_unsup_dynamic, loss_unsup_static = unsup_loss(x_unsup, y_unsup_t0_hat, y_unsup_t1_hat)
+
+                loss = loss_sup + self.hparams.w_dynamic * loss_unsup_dynamic + self.hparams.w_static * loss_unsup_static + self.hparams.w_pseudo * loss_pseudo
+                losses = {'loss': loss, 'loss_sup': loss_sup, 'loss_unsup_dynamic': loss_unsup_dynamic, 'loss_unsup_static': loss_unsup_static, 'loss_pseudo': loss_pseudo}
 
             elif self.hparams.train_dataset['name'] in ['ReferenceDataset']:
                 x_ref = batch['ref_point_clouds']
@@ -344,7 +288,7 @@ class MeanTeacherLitModel(pl.LightningModule):
         log_dict = {'val_mpjpe': mpjpe, 'val_pampjpe': pampjpe}
         self.log_dict(log_dict, sync_dist=True)
 
-        if batch_idx == 0:
+        if batch_idx == 10:
             self._vis_pred_gt_keypoints(x, y, y_hat)
     
     def test_step(self, batch, batch_idx):
@@ -360,7 +304,8 @@ class MeanTeacherLitModel(pl.LightningModule):
 
         log_dict = {'test_mpjpe': mpjpe, 'test_pampjpe': pampjpe}
         self.log_dict(log_dict, sync_dist=True)
-        if batch_idx == 0:
+        
+        if batch_idx == 10:
             self._vis_pred_gt_keypoints(x, y, y_hat)
 
         if self.hparams.save_when_test:
@@ -438,8 +383,8 @@ class MeanTeacherLitModel(pl.LightningModule):
         return super().on_predict_end()
 
     def configure_optimizers(self):
-        optimizer = create_optimizer(self.hparams, self.model.parameters())
-        scheduler = create_scheduler(self.hparams, optimizer)
+        optimizer = create_optimizer(self.hparams.optim_name, self.hparams.optim_params, self.model.parameters())
+        scheduler = create_scheduler(self.hparams.sched_name, self.hparams.sched_params, optimizer)
         return [optimizer], [scheduler]
 
     def on_before_backward(self, loss: torch.Tensor) -> None:
