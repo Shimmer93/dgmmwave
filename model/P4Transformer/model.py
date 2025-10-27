@@ -17,7 +17,7 @@ class P4Transformer(nn.Module):
                  temporal_kernel_size, temporal_stride,                                 # P4DConv: temporal
                  emb_relu,                                                              # embedding: relu
                  dim, depth, heads, dim_head,                                           # transformer
-                 mlp_dim, output_dim, features=3):                                                 # output
+                 mlp_dim, output_dim, features=3, mode='only_h'):                                                 # output
         super().__init__()
 
         self.tube_embedding = P4DConv(in_planes=features, mlp_planes=[dim], mlp_batch_norm=[False], mlp_activation=[False],
@@ -37,9 +37,21 @@ class P4Transformer(nn.Module):
             nn.Linear(mlp_dim, output_dim),
         )
 
+        assert mode in ['only_h', 'xyz', 'd', 'all'], "mode should be one of ['only_h', 'xyz', 'd', 'all']"
+        self.mode = mode
+
     def forward(self, input):                                                                                                               # [B, L, N, 3]
         device = input.get_device()
-        xyzs, features = self.tube_embedding(input[:,:,:,:3], input[:,:,:,2:3].clone().permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
+
+        if self.mode == 'only_h':
+            input_feat = input[:,:,:,2:3].clone()
+        elif self.mode == 'xyz':
+            input_feat = input[:,:,:,:3].clone()
+        elif self.mode == 'd':
+            input_feat = input[:,:,:,3:4].clone()
+        elif self.mode == 'all':
+            input_feat = input[:,:,:,3:5].clone()
+        xyzs, features = self.tube_embedding(input[:,:,:,:3], input_feat.permute(0,1,3,2))                                             # [B, L, n, 3], [B, L, C, n] 
 
         # print('xyzs: ', xyzs.max().item(), xyzs.min().item())
         # print('features: ', features.max().item(), features.min().item())

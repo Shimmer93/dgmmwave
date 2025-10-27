@@ -45,7 +45,7 @@ class ReferenceDataset(TemporalDataset):
         ref_sample = deepcopy(self.ref_data[ref_seq_idx])
 
         if self.ref_trans:
-            ref_sample['point_clouds'] = ref_sample['point_clouds_trans']
+            ref_sample['point_clouds'] = ref_sample['point_clouds_trans'] 
             ref_sample['keypoints'] = ref_sample['keypoints'][:-1]
         elif self.ref_both:
             ref_sample['keypoints'] = ref_sample['keypoints'][:-1]

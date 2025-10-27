@@ -65,11 +65,14 @@ class AddNoisyPoints():
     def __call__(self, sample):
         for i in range(len(sample['point_clouds'])):
             if self.zero_centered:
-                noise = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][i].shape[1]))
+                # center is the 8-th keypoint (pelvis)
+                center = sample['keypoints'][i][8]
+                noise = np.random.normal(loc=0.0, scale=self.add_std, size=(self.num_added, 3))
+                noise += center[np.newaxis, :]
             else:
-                noise_center = np.random.uniform(-1.5, 1.5, sample['point_clouds'][i].shape[1])
-                noise = np.random.normal(0, self.add_std, (self.num_added, sample['point_clouds'][i].shape[1])) + noise_center
-            sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i], noise], axis=0)
+                noise = np.random.uniform(low=0, high=2, size=(self.num_added, 3))
+                noise += np.random.normal(loc=0.0, scale=self.add_std, size=(self.num_added, 3))
+            sample['point_clouds'][i] = np.concatenate([sample['point_clouds'][i][..., :3], noise], axis=0)
         
         return sample
 

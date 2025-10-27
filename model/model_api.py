@@ -226,24 +226,6 @@ class LitModel(pl.LightningModule):
                 y_hat = self.model(x)
                 loss = self.loss(y_hat, y)
                 losses = {'loss': loss}
-
-        elif self.hparams.model_name == 'PoseTransformer':
-            #TODO: Implement the loss function of posetran
-            # sformer
-            x = x[:, :, :, :3]
-            y_hat = self.model(x)
-            y_mod = torch.clone(y)
-            y_mod[:, :, 0] = 0
-            # loss = self.losses['pc'](y_hat, y)
-            loss = mpjpe_mmwave(y_hat, y_mod)
-            loss = y_mod.shape[0] * y_mod.shape[1] * loss
-            print("The original loss is", loss)
-            # The current problems:
-            # 1. The input shape of x is [batch_size, receptive_frames = 5, joint_num = 1024, channels], however, if joint_num is set to 1024, it is too big for the model to initialize
-            # 2. The output shape of y_hat is [batch_size, 1, joint_num, -1], which is different from y, whose shape is [batch_size, 1, 13, 3]
-            # 3. In the validation step afterwards, we also calcualte mpjpe, why we need to calculate it twice?
-            # # torch.cuda.empty_cache()
-            torch.cuda.empty_cache()
         else:
             raise NotImplementedError
         
@@ -253,7 +235,7 @@ class LitModel(pl.LightningModule):
         x = batch['point_clouds']
         y = batch['keypoints']
         
-        y_hat = self.model(x[..., :3])
+        y_hat = self.model(x)
         return x, y, y_hat
 
     def training_step(self, batch, batch_idx):

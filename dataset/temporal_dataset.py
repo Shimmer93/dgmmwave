@@ -47,6 +47,8 @@ class TemporalDataset(Dataset):
             sample['keypoints'] = sample['keypoints'][:-1]
         elif self.both:
             sample['keypoints'] = sample['keypoints'][:-1]
+            if 'point_clouds_trans' not in sample:
+                sample['point_clouds_trans'] = deepcopy(sample['point_clouds'])
 
         sample['dataset_name'] = self.data_path.split('/')[-1].split('.')[0]
         sample['sequence_index'] = seq_idx
